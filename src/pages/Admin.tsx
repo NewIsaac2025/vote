@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Users, Vote, BarChart3, Settings, 
   Calendar, Clock, Edit3, Trash2, Eye,
-  UserCheck, AlertCircle, TrendingUp, Download
+  UserCheck, AlertCircle, TrendingUp, Download,
+  Activity, Award, Target
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatDate, getElectionStatus, exportToCSV } from '../lib/utils';
@@ -10,6 +11,7 @@ import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import CreateElectionModal from '../components/Admin/CreateElectionModal';
+import ElectionAnalytics from '../components/Admin/ElectionAnalytics';
 
 interface Election {
   id: string;
@@ -37,10 +39,11 @@ interface DashboardStats {
   totalStudents: number;
   verifiedStudents: number;
   totalVotes: number;
+  totalCandidates: number;
 }
 
 const Admin: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'elections' | 'students' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'elections' | 'students' | 'analytics' | 'settings'>('dashboard');
   const [elections, setElections] = useState<Election[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
@@ -48,7 +51,8 @@ const Admin: React.FC = () => {
     activeElections: 0,
     totalStudents: 0,
     verifiedStudents: 0,
-    totalVotes: 0
+    totalVotes: 0,
+    totalCandidates: 0
   });
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -89,12 +93,18 @@ const Admin: React.FC = () => {
         .from('votes')
         .select('*', { count: 'exact', head: true });
 
+      // Get total candidates count
+      const { count: totalCandidates } = await supabase
+        .from('candidates')
+        .select('*', { count: 'exact', head: true });
+
       setStats({
         totalElections: electionsData?.length || 0,
         activeElections,
         totalStudents: studentsData?.length || 0,
         verifiedStudents,
-        totalVotes: totalVotes || 0
+        totalVotes: totalVotes || 0,
+        totalCandidates: totalCandidates || 0
       });
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -140,6 +150,7 @@ const Admin: React.FC = () => {
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'elections', label: 'Elections', icon: Vote },
     { id: 'students', label: 'Students', icon: Users },
+    { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -199,8 +210,8 @@ const Admin: React.FC = () => {
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            {/* Enhanced Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
               <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
                 <div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
                   <Vote className="h-6 w-6 text-blue-600" />
@@ -240,6 +251,67 @@ const Admin: React.FC = () => {
                 <p className="text-2xl font-bold text-gray-900">{stats.totalVotes}</p>
                 <p className="text-sm text-gray-600">Total Votes</p>
               </Card>
+
+              <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+                <div className="bg-indigo-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Target className="h-6 w-6 text-indigo-600" />
+                </div>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalCandidates}</p>
+                <p className="text-sm text-gray-600">Total Candidates</p>
+              </Card>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+                <div className="text-center">
+                  <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Plus className="h-8 w-8 text-blue-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Create Election</h3>
+                  <p className="text-gray-600 mb-4">Set up a new election with candidates and voting periods</p>
+                  <Button 
+                    onClick={() => setShowCreateModal(true)}
+                    className="w-full"
+                  >
+                    Create New Election
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+                <div className="text-center">
+                  <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Download className="h-8 w-8 text-green-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Export Data</h3>
+                  <p className="text-gray-600 mb-4">Download student data and election results for analysis</p>
+                  <Button 
+                    onClick={handleExportStudents}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    Export Students
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+                <div className="text-center">
+                  <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Activity className="h-8 w-8 text-purple-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">View Analytics</h3>
+                  <p className="text-gray-600 mb-4">Analyze voting patterns and election performance</p>
+                  <Button 
+                    onClick={() => setActiveTab('analytics')}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    View Analytics
+                  </Button>
+                </div>
+              </Card>
             </div>
 
             {/* Recent Elections */}
@@ -260,17 +332,31 @@ const Admin: React.FC = () => {
                   const status = getElectionStatus(election.start_date, election.end_date);
                   return (
                     <div key={election.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{election.title}</h3>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-1">
+                          <h3 className="font-medium text-gray-900">{election.title}</h3>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            status === 'active' ? 'bg-green-100 text-green-800' :
+                            status === 'upcoming' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {status}
+                          </span>
+                        </div>
                         <p className="text-sm text-gray-600">{formatDate(election.start_date)}</p>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        status === 'active' ? 'bg-green-100 text-green-800' :
-                        status === 'upcoming' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {status}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`/elections/${election.id}`} target="_blank" rel="noopener noreferrer">
+                            <Eye className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`/results/${election.id}`} target="_blank" rel="noopener noreferrer">
+                            <BarChart3 className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -402,6 +488,9 @@ const Admin: React.FC = () => {
             </Card>
           </div>
         )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && <ElectionAnalytics />}
 
         {/* Settings Tab */}
         {activeTab === 'settings' && (

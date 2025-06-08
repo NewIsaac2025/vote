@@ -13,6 +13,8 @@ import { sendEmail, generateVoteConfirmationEmail } from '../lib/email';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
+import CandidateCard from '../components/Elections/CandidateCard';
+import LiveVoteTracker from '../components/Elections/LiveVoteTracker';
 
 interface Election {
   id: string;
@@ -40,7 +42,10 @@ interface ElectionResult {
   candidate_name: string;
   department: string;
   course: string;
+  year_of_study: number;
+  image_url: string;
   vote_count: number;
+  vote_percentage: number;
 }
 
 const ElectionDetails: React.FC = () => {
@@ -89,7 +94,7 @@ const ElectionDetails: React.FC = () => {
       if (candidatesError) throw candidatesError;
       setCandidates(candidatesData || []);
 
-      // Fetch results
+      // Fetch results using the new function
       const { data: resultsData, error: resultsError } = await supabase
         .rpc('get_election_results', { election_uuid: id });
 
@@ -109,14 +114,13 @@ const ElectionDetails: React.FC = () => {
 
     try {
       const { data, error } = await supabase
-        .from('votes')
-        .select('id')
-        .eq('student_id', student.id)
-        .eq('election_id', id)
-        .maybeSingle();
+        .rpc('check_student_vote_status', { 
+          student_uuid: student.id, 
+          election_uuid: id 
+        });
 
-      if (!error && data) {
-        setHasVoted(true);
+      if (!error && data && data.length > 0) {
+        setHasVoted(data[0].has_voted);
       }
     } catch (error) {
       console.error('Error checking voting status:', error);
@@ -331,6 +335,13 @@ const ElectionDetails: React.FC = () => {
           </div>
         </div>
 
+        {/* Live Vote Tracker */}
+        {(status === 'active' || totalVotes > 0) && (
+          <div className="mb-8">
+            <LiveVoteTracker electionId={election.id} isActive={status === 'active'} />
+          </div>
+        )}
+
         {/* Success Message */}
         {success && (
           <Card className="mb-8 bg-green-50 border-green-200">
@@ -408,123 +419,25 @@ const ElectionDetails: React.FC = () => {
 
         {/* Candidates */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {candidates.map((candidate) => {
+          {candidates.map((candidate, index) => {
             const candidateResult = results.find(r => r.candidate_id === candidate.id);
-            const voteCount = candidateResult?.vote_count || 0;
-            const votePercentage = totalVotes > 0 ? (voteCount / totalVotes) * 100 : 0;
             const isSelected = selectedCandidate === candidate.id;
+            const rank = results.findIndex(r => r.candidate_id === candidate.id) + 1;
 
             return (
-              <Card 
+              <CandidateCard
                 key={candidate.id}
-                className={`transition-all duration-300 cursor-pointer backdrop-blur-sm bg-white/80 border-white/20 ${
-                  isSelected 
-                    ? 'ring-2 ring-blue-500 shadow-xl scale-[1.02]' 
-                    : canVote 
-                      ? 'hover:shadow-xl hover:scale-[1.01]' 
-                      : ''
-                }`}
-                onClick={() => canVote && setSelectedCandidate(candidate.id)}
-              >
-                {/* Candidate Header */}
-                <div className="flex items-start space-x-4 mb-6">
-                  <div className="relative">
-                    {candidate.image_url ? (
-                      <img
-                        src={candidate.image_url}
-                        alt={candidate.full_name}
-                        className="w-16 h-16 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                        <User className="h-8 w-8 text-white" />
-                      </div>
-                    )}
-                    {isSelected && (
-                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-white" />
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">{candidate.full_name}</h3>
-                    <p className="text-blue-600 font-medium">{candidate.department}</p>
-                    <p className="text-gray-600 text-sm">{candidate.course} • Year {candidate.year_of_study}</p>
-                  </div>
-
-                  {status !== 'upcoming' && (
-                    <div className="text-right">
-                      <div className="flex items-center space-x-1 text-gray-600 mb-1">
-                        <TrendingUp className="h-4 w-4" />
-                        <span className="text-sm font-medium">{voteCount} votes</span>
-                      </div>
-                      <div className="text-lg font-bold text-blue-600">{votePercentage.toFixed(1)}%</div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Vote Progress Bar */}
-                {status !== 'upcoming' && totalVotes > 0 && (
-                  <div className="mb-4">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${votePercentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Manifesto */}
-                {candidate.manifesto && (
-                  <div className="mb-4">
-                    <h4 className="font-medium text-gray-900 mb-2">Manifesto</h4>
-                    <p className="text-gray-600 text-sm line-clamp-3">{candidate.manifesto}</p>
-                  </div>
-                )}
-
-                {/* Media Links */}
-                <div className="flex space-x-2">
-                  {candidate.video_url && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(candidate.video_url, '_blank');
-                      }}
-                    >
-                      <Play className="h-4 w-4 mr-1" />
-                      Video
-                    </Button>
-                  )}
-                  {candidate.email && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(`mailto:${candidate.email}`, '_blank');
-                      }}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-1" />
-                      Contact
-                    </Button>
-                  )}
-                </div>
-
-                {/* Selection Indicator */}
-                {canVote && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className={`text-center text-sm font-medium ${
-                      isSelected ? 'text-blue-600' : 'text-gray-400'
-                    }`}>
-                      {isSelected ? '✓ Selected for voting' : 'Click to select'}
-                    </div>
-                  </div>
-                )}
-              </Card>
+                candidate={candidate}
+                result={candidateResult ? {
+                  vote_count: candidateResult.vote_count,
+                  vote_percentage: candidateResult.vote_percentage
+                } : undefined}
+                isSelected={isSelected}
+                canVote={canVote}
+                showResults={status !== 'upcoming'}
+                rank={candidateResult ? rank : undefined}
+                onSelect={setSelectedCandidate}
+              />
             );
           })}
         </div>
