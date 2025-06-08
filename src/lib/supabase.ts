@@ -23,6 +23,16 @@ try {
   throw new Error('Invalid Supabase URL format. Please check your VITE_SUPABASE_URL in .env file.');
 }
 
+// Check if URL looks like a placeholder
+if (supabaseUrl.includes('your-project-ref') || supabaseUrl === 'https://your-project-ref.supabase.co') {
+  throw new Error('Please replace the placeholder Supabase URL with your actual project URL from https://supabase.com/dashboard');
+}
+
+// Check if anon key looks like a placeholder
+if (supabaseAnonKey.includes('your-anon-key') || supabaseAnonKey === 'your-anon-key-here') {
+  throw new Error('Please replace the placeholder Supabase anon key with your actual anon key from https://supabase.com/dashboard');
+}
+
 // Create Supabase client with optimized configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
