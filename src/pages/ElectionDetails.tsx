@@ -128,6 +128,7 @@ const ElectionDetails: React.FC = () => {
   };
 
   const handleCandidateSelect = async (candidateId: string) => {
+    // Prevent multiple simultaneous voting attempts
     if (!student || !election || hasVoted || voting) {
       return;
     }
@@ -146,7 +147,7 @@ const ElectionDetails: React.FC = () => {
     // Show confirmation dialog
     const candidateName = candidates.find(c => c.id === candidateId)?.full_name;
     const confirmed = window.confirm(
-      `Are you sure you want to vote for ${candidateName}?\n\nThis action cannot be undone.`
+      `Are you sure you want to vote for ${candidateName}?\n\nThis action cannot be undone and your vote will be recorded on the blockchain.`
     );
 
     if (!confirmed) {
@@ -252,7 +253,7 @@ const ElectionDetails: React.FC = () => {
 
       // Update local state
       setHasVoted(true);
-      setSuccess(`Vote successfully cast for ${candidateNameForEmail}! Thank you for participating.`);
+      setSuccess(`🎉 Vote successfully cast for ${candidateNameForEmail}! Thank you for participating in the democratic process.`);
       
       // Refresh results
       await fetchElectionData();
@@ -381,7 +382,7 @@ const ElectionDetails: React.FC = () => {
               <div className="flex items-center space-x-3 text-green-600">
                 <CheckCircle className="h-6 w-6" />
                 <div>
-                  <p className="font-medium">Vote Recorded</p>
+                  <p className="font-medium">Vote Recorded ✅</p>
                   <p className="text-sm text-gray-600">Thank you for participating in this election</p>
                 </div>
               </div>
@@ -404,7 +405,7 @@ const ElectionDetails: React.FC = () => {
                 <LoadingSpinner size="sm" />
                 <div>
                   <p className="font-medium">Processing Vote...</p>
-                  <p className="text-sm text-gray-600">Please wait while we record your vote securely</p>
+                  <p className="text-sm text-gray-600">Please wait while we record your vote securely on the blockchain</p>
                 </div>
               </div>
             ) : !user ? (
@@ -454,7 +455,7 @@ const ElectionDetails: React.FC = () => {
               <Vote className="h-5 w-5" />
               <div>
                 <p className="font-medium">How to Vote</p>
-                <p className="text-sm">Simply click on your preferred candidate below. You'll be asked to confirm your choice before the vote is recorded.</p>
+                <p className="text-sm">Simply click on your preferred candidate below. You'll be asked to confirm your choice before the vote is recorded on the blockchain.</p>
               </div>
             </div>
           </Card>
