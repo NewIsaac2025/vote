@@ -44,8 +44,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       console.log('Supabase fetch request:', url);
       return fetch(url, {
         ...options,
-        // Add timeout to prevent hanging requests
-        signal: AbortSignal.timeout(15000) // Reduced to 15 seconds for faster feedback
+        // Increased timeout to 30 seconds for better reliability
+        signal: AbortSignal.timeout(30000)
       }).catch(error => {
         console.error('Supabase fetch error:', error);
         throw error;
@@ -58,7 +58,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 export const testSupabaseConnection = async () => {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // Increased to 20 second timeout
 
     const { data, error } = await supabase
       .from('elections')
