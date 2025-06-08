@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
   TrendingUp, Users, Award, BarChart3, PieChart, 
   Download, Share2, Calendar, Clock, Vote,
-  Trophy, Medal, Target
+  Trophy, Medal, Target, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatDate, exportToCSV } from '../lib/utils';
@@ -26,6 +26,7 @@ interface ElectionResult {
   department: string;
   course: string;
   vote_count: number;
+  vote_percentage: number;
 }
 
 interface Candidate {
@@ -37,6 +38,14 @@ interface Candidate {
   image_url: string;
 }
 
+// Cache for results to improve performance
+const resultsCache = new Map<string, { 
+  results: ElectionResult[]; 
+  candidates: Candidate[]; 
+  timestamp: number 
+}>();
+const CACHE_DURATION = 30000; // 30 seconds
+
 const Results: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [elections, setElections] = useState<Election[]>([]);
@@ -44,65 +53,138 @@ const Results: React.FC = () => {
   const [results, setResults] = useState<ElectionResult[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchElections();
-  }, []);
+  // Memoized calculations for better performance
+  const totalVotes = useMemo(() => 
+    results.reduce((sum, result) => sum + result.vote_count, 0), 
+    [results]
+  );
+  
+  const winner = useMemo(() => results[0], [results]);
 
-  useEffect(() => {
-    if (id) {
-      const election = elections.find(e => e.id === id);
-      if (election) {
-        setSelectedElection(election);
-        fetchElectionResults(id);
-      }
-    } else if (elections.length > 0) {
-      // Default to the most recent election
-      const mostRecent = elections[0];
-      setSelectedElection(mostRecent);
-      fetchElectionResults(mostRecent.id);
-    }
-  }, [id, elections]);
-
-  const fetchElections = async () => {
+  const fetchElections = useCallback(async () => {
     try {
+      setError(null);
+      
       const { data, error } = await supabase
         .from('elections')
-        .select('*')
+        .select('id, title, description, start_date, end_date, is_active')
         .order('start_date', { ascending: false });
 
       if (error) throw error;
       setElections(data || []);
+      
+      return data || [];
     } catch (error) {
       console.error('Error fetching elections:', error);
+      setError('Failed to load elections. Please try again.');
+      return [];
+    }
+  }, []);
+
+  const fetchElectionResults = useCallback(async (electionId: string) => {
+    // Check cache first
+    const cached = resultsCache.get(electionId);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      setResults(cached.results);
+      setCandidates(cached.candidates);
+      return;
+    }
+
+    setLoadingResults(true);
+    
+    try {
+      // Fetch results and candidates in parallel for better performance
+      const [resultsResponse, candidatesResponse] = await Promise.all([
+        supabase.rpc('get_election_results', { election_uuid: electionId }),
+        supabase
+          .from('candidates')
+          .select('id, full_name, department, course, year_of_study, image_url')
+          .eq('election_id', electionId)
+      ]);
+
+      if (resultsResponse.error) throw resultsResponse.error;
+      if (candidatesResponse.error) throw candidatesResponse.error;
+
+      const resultsData = resultsResponse.data || [];
+      const candidatesData = candidatesResponse.data || [];
+
+      // Cache the results
+      resultsCache.set(electionId, {
+        results: resultsData,
+        candidates: candidatesData,
+        timestamp: Date.now()
+      });
+
+      setResults(resultsData);
+      setCandidates(candidatesData);
+    } catch (error) {
+      console.error('Error fetching results:', error);
+      setError('Failed to load election results. Please try again.');
+    } finally {
+      setLoadingResults(false);
+    }
+  }, []);
+
+  const handleElectionSelect = useCallback((election: Election) => {
+    setSelectedElection(election);
+    fetchElectionResults(election.id);
+  }, [fetchElectionResults]);
+
+  const retryLoad = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const electionsData = await fetchElections();
+      
+      if (id) {
+        const election = electionsData.find(e => e.id === id);
+        if (election) {
+          setSelectedElection(election);
+          await fetchElectionResults(id);
+        }
+      } else if (electionsData.length > 0) {
+        const mostRecent = electionsData[0];
+        setSelectedElection(mostRecent);
+        await fetchElectionResults(mostRecent.id);
+      }
+    } catch (error) {
+      console.error('Error during retry:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, fetchElections, fetchElectionResults]);
 
-  const fetchElectionResults = async (electionId: string) => {
-    try {
-      // Fetch results
-      const { data: resultsData, error: resultsError } = await supabase
-        .rpc('get_election_results', { election_uuid: electionId });
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        const electionsData = await fetchElections();
+        
+        if (id) {
+          const election = electionsData.find(e => e.id === id);
+          if (election) {
+            setSelectedElection(election);
+            await fetchElectionResults(id);
+          }
+        } else if (electionsData.length > 0) {
+          const mostRecent = electionsData[0];
+          setSelectedElection(mostRecent);
+          await fetchElectionResults(mostRecent.id);
+        }
+      } catch (error) {
+        console.error('Error initializing data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      if (resultsError) throw resultsError;
-      setResults(resultsData || []);
+    initializeData();
+  }, [id, fetchElections, fetchElectionResults]);
 
-      // Fetch candidate details
-      const { data: candidatesData, error: candidatesError } = await supabase
-        .from('candidates')
-        .select('id, full_name, department, course, year_of_study, image_url')
-        .eq('election_id', electionId);
-
-      if (candidatesError) throw candidatesError;
-      setCandidates(candidatesData || []);
-    } catch (error) {
-      console.error('Error fetching results:', error);
-    }
-  };
-
-  const handleExportResults = () => {
+  const handleExportResults = useCallback(() => {
     if (!selectedElection || !results.length) return;
 
     const exportData = results.map((result, index) => ({
@@ -111,13 +193,13 @@ const Results: React.FC = () => {
       department: result.department,
       course: result.course,
       vote_count: result.vote_count,
-      percentage: totalVotes > 0 ? ((result.vote_count / totalVotes) * 100).toFixed(2) + '%' : '0%'
+      percentage: result.vote_percentage.toFixed(2) + '%'
     }));
 
     exportToCSV(exportData, `${selectedElection.title}_results.csv`);
-  };
+  }, [selectedElection, results]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     if (!selectedElection) return;
 
     const shareData = {
@@ -133,25 +215,42 @@ const Results: React.FC = () => {
         console.log('Error sharing:', error);
       }
     } else {
-      // Fallback to copying URL
       navigator.clipboard.writeText(window.location.href);
       alert('Link copied to clipboard!');
     }
-  };
+  }, [selectedElection]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
-          <LoadingSpinner size="lg" />
-          <p className="text-gray-600">Loading results...</p>
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full blur-lg opacity-30 animate-pulse"></div>
+            <div className="relative">
+              <LoadingSpinner size="lg" />
+            </div>
+          </div>
+          <p className="text-gray-600 font-medium">Loading results...</p>
         </div>
       </div>
     );
   }
 
-  const totalVotes = results.reduce((sum, result) => sum + result.vote_count, 0);
-  const winner = results[0];
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="text-center py-12 bg-red-50 border-red-200 max-w-md">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-red-900 mb-2">Failed to Load Results</h3>
+          <p className="text-red-700 mb-6">{error}</p>
+          <Button onClick={retryLoad} className="bg-red-600 hover:bg-red-700">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen py-12">
@@ -178,9 +277,9 @@ const Results: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Election</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {elections.map((election) => (
-                <Link
+                <button
                   key={election.id}
-                  to={`/results/${election.id}`}
+                  onClick={() => handleElectionSelect(election)}
                   className={`p-4 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] ${
                     selectedElection?.id === election.id
                       ? 'border-blue-500 bg-blue-50'
@@ -189,7 +288,7 @@ const Results: React.FC = () => {
                 >
                   <h4 className="font-medium text-gray-900 mb-1">{election.title}</h4>
                   <p className="text-sm text-gray-600">{formatDate(election.start_date)}</p>
-                </Link>
+                </button>
               ))}
             </div>
           </Card>
@@ -223,6 +322,7 @@ const Results: React.FC = () => {
                     variant="outline"
                     onClick={handleExportResults}
                     className="border-white text-white hover:bg-white hover:text-blue-600"
+                    disabled={!results.length}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Export
@@ -239,8 +339,16 @@ const Results: React.FC = () => {
               </div>
             </Card>
 
+            {/* Loading indicator for results */}
+            {loadingResults && (
+              <div className="mb-8 flex items-center justify-center">
+                <LoadingSpinner size="md" />
+                <span className="ml-3 text-gray-600">Loading results...</span>
+              </div>
+            )}
+
             {/* Winner Announcement */}
-            {winner && totalVotes > 0 && (
+            {winner && totalVotes > 0 && !loadingResults && (
               <Card className="mb-8 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200 backdrop-blur-sm">
                 <div className="text-center">
                   <div className="relative inline-block mb-4">
@@ -259,7 +367,7 @@ const Results: React.FC = () => {
                     </div>
                     <div className="text-center">
                       <p className="text-2xl font-bold text-yellow-800">
-                        {((winner.vote_count / totalVotes) * 100).toFixed(1)}%
+                        {winner.vote_percentage.toFixed(1)}%
                       </p>
                       <p className="text-sm text-yellow-600">of Total</p>
                     </div>
@@ -269,98 +377,102 @@ const Results: React.FC = () => {
             )}
 
             {/* Results */}
-            {results.length > 0 ? (
-              <div className="space-y-6">
-                {results.map((result, index) => {
-                  const candidate = candidates.find(c => c.id === result.candidate_id);
-                  const percentage = totalVotes > 0 ? (result.vote_count / totalVotes) * 100 : 0;
-                  const isWinner = index === 0 && totalVotes > 0;
+            {!loadingResults && (
+              <>
+                {results.length > 0 ? (
+                  <div className="space-y-6">
+                    {results.map((result, index) => {
+                      const candidate = candidates.find(c => c.id === result.candidate_id);
+                      const isWinner = index === 0 && totalVotes > 0;
 
-                  return (
-                    <Card 
-                      key={result.candidate_id}
-                      className={`transition-all duration-300 backdrop-blur-sm bg-white/80 border-white/20 ${
-                        isWinner ? 'ring-2 ring-yellow-400 shadow-xl' : ''
-                      }`}
-                    >
-                      <div className="flex items-center space-x-4">
-                        {/* Rank */}
-                        <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
-                          index === 0 ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
-                          index === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400 text-white' :
-                          index === 2 ? 'bg-gradient-to-r from-orange-300 to-orange-400 text-white' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {index === 0 ? <Trophy className="h-6 w-6" /> :
-                           index === 1 ? <Medal className="h-6 w-6" /> :
-                           index === 2 ? <Target className="h-6 w-6" /> :
-                           index + 1}
-                        </div>
+                      return (
+                        <Card 
+                          key={result.candidate_id}
+                          className={`transition-all duration-300 backdrop-blur-sm bg-white/80 border-white/20 ${
+                            isWinner ? 'ring-2 ring-yellow-400 shadow-xl' : ''
+                          }`}
+                        >
+                          <div className="flex items-center space-x-4">
+                            {/* Rank */}
+                            <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
+                              index === 0 ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
+                              index === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400 text-white' :
+                              index === 2 ? 'bg-gradient-to-r from-orange-300 to-orange-400 text-white' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {index === 0 ? <Trophy className="h-6 w-6" /> :
+                               index === 1 ? <Medal className="h-6 w-6" /> :
+                               index === 2 ? <Target className="h-6 w-6" /> :
+                               index + 1}
+                            </div>
 
-                        {/* Candidate Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-3 mb-2">
-                            {candidate?.image_url ? (
-                              <img
-                                src={candidate.image_url}
-                                alt={result.candidate_name}
-                                className="w-10 h-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                                <span className="text-white font-medium text-sm">
-                                  {result.candidate_name.charAt(0)}
-                                </span>
+                            {/* Candidate Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-3 mb-2">
+                                {candidate?.image_url ? (
+                                  <img
+                                    src={candidate.image_url}
+                                    alt={result.candidate_name}
+                                    className="w-10 h-10 rounded-full object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white font-medium text-sm">
+                                      {result.candidate_name.charAt(0)}
+                                    </span>
+                                  </div>
+                                )}
+                                <div>
+                                  <h3 className="text-lg font-semibold text-gray-900">{result.candidate_name}</h3>
+                                  <p className="text-sm text-gray-600">{result.department} • {result.course}</p>
+                                </div>
                               </div>
-                            )}
-                            <div>
-                              <h3 className="text-lg font-semibold text-gray-900">{result.candidate_name}</h3>
-                              <p className="text-sm text-gray-600">{result.department} • {result.course}</p>
-                            </div>
-                          </div>
 
-                          {/* Progress Bar */}
-                          <div className="mb-2">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm text-gray-600">Vote Share</span>
-                              <span className="text-sm font-medium text-gray-900">{percentage.toFixed(1)}%</span>
+                              {/* Progress Bar */}
+                              <div className="mb-2">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-sm text-gray-600">Vote Share</span>
+                                  <span className="text-sm font-medium text-gray-900">{result.vote_percentage.toFixed(1)}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-3">
+                                  <div 
+                                    className={`h-3 rounded-full transition-all duration-1000 ${
+                                      isWinner 
+                                        ? 'bg-gradient-to-r from-yellow-400 to-orange-400' 
+                                        : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                                    }`}
+                                    style={{ width: `${Math.min(result.vote_percentage, 100)}%` }}
+                                  ></div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-3">
-                              <div 
-                                className={`h-3 rounded-full transition-all duration-1000 ${
-                                  isWinner 
-                                    ? 'bg-gradient-to-r from-yellow-400 to-orange-400' 
-                                    : 'bg-gradient-to-r from-blue-500 to-purple-500'
-                                }`}
-                                style={{ width: `${percentage}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* Vote Count */}
-                        <div className="text-right">
-                          <div className="flex items-center space-x-1 text-gray-600 mb-1">
-                            <Vote className="h-4 w-4" />
-                            <span className="text-sm">Votes</span>
+                            {/* Vote Count */}
+                            <div className="text-right">
+                              <div className="flex items-center space-x-1 text-gray-600 mb-1">
+                                <Vote className="h-4 w-4" />
+                                <span className="text-sm">Votes</span>
+                              </div>
+                              <p className="text-2xl font-bold text-gray-900">{result.vote_count.toLocaleString()}</p>
+                            </div>
                           </div>
-                          <p className="text-2xl font-bold text-gray-900">{result.vote_count.toLocaleString()}</p>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            ) : (
-              <Card className="text-center py-16 backdrop-blur-sm bg-white/80 border-white/20">
-                <BarChart3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-xl font-medium text-gray-900 mb-2">No Results Yet</h3>
-                <p className="text-gray-600">Results will appear here once voting begins</p>
-              </Card>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <Card className="text-center py-16 backdrop-blur-sm bg-white/80 border-white/20">
+                    <BarChart3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-xl font-medium text-gray-900 mb-2">No Results Yet</h3>
+                    <p className="text-gray-600">Results will appear here once voting begins</p>
+                  </Card>
+                )}
+              </>
             )}
 
             {/* Statistics */}
-            {totalVotes > 0 && (
+            {totalVotes > 0 && !loadingResults && (
               <Card className="mt-8 backdrop-blur-sm bg-white/80 border-white/20">
                 <h3 className="text-lg font-semibold text-gray-900 mb-6">Election Statistics</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -383,7 +495,7 @@ const Results: React.FC = () => {
                       <Award className="h-6 w-6 text-purple-600" />
                     </div>
                     <p className="text-2xl font-bold text-gray-900">
-                      {winner ? ((winner.vote_count / totalVotes) * 100).toFixed(1) : 0}%
+                      {winner ? winner.vote_percentage.toFixed(1) : 0}%
                     </p>
                     <p className="text-sm text-gray-600">Winning Margin</p>
                   </div>

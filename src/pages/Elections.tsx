@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Vote, Calendar, Users, Clock, Search, Filter, Sparkles, TrendingUp, AlertCircle } from 'lucide-react';
+import { Vote, Calendar, Users, Clock, Search, Filter, Sparkles, TrendingUp, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getElectionStatus, formatDate } from '../lib/utils';
 import Card from '../components/UI/Card';
@@ -25,72 +25,149 @@ interface ElectionResult {
   vote_count: number;
 }
 
+// Cache for election results to avoid repeated API calls
+const resultsCache = new Map<string, { data: ElectionResult[]; timestamp: number }>();
+const CACHE_DURATION = 30000; // 30 seconds
+
 const Elections: React.FC = () => {
   const [elections, setElections] = useState<Election[]>([]);
   const [results, setResults] = useState<Record<string, ElectionResult[]>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingResults, setLoadingResults] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'upcoming' | 'ended'>('all');
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchElections();
-  }, []);
+  // Memoized filtered elections for better performance
+  const filteredElections = useMemo(() => {
+    return elections.filter(election => {
+      const matchesSearch = election.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           election.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (!matchesSearch) return false;
 
-  const fetchElections = async () => {
+      if (statusFilter === 'all') return true;
+      
+      const status = getElectionStatus(election.start_date, election.end_date);
+      return status === statusFilter;
+    });
+  }, [elections, searchTerm, statusFilter]);
+
+  const fetchElections = useCallback(async () => {
     try {
+      setError(null);
+      
       const { data: electionsData, error } = await supabase
         .from('elections')
-        .select('*')
+        .select('id, title, description, start_date, end_date, is_active')
         .order('start_date', { ascending: false });
 
       if (error) throw error;
 
       setElections(electionsData || []);
+      
+      // Fetch results for visible elections only (first 6 for initial load)
+      const visibleElections = (electionsData || []).slice(0, 6);
+      await fetchResultsForElections(visibleElections);
+      
+    } catch (error) {
+      console.error('Error fetching elections:', error);
+      setError('Failed to load elections. Please try again.');
+    }
+  }, []);
 
-      // Fetch results for each election in parallel
-      if (electionsData && electionsData.length > 0) {
-        const resultsPromises = electionsData.map(async (election) => {
+  const fetchResultsForElections = useCallback(async (electionsToFetch: Election[]) => {
+    if (electionsToFetch.length === 0) return;
+    
+    setLoadingResults(true);
+    
+    try {
+      // Process elections in batches for better performance
+      const batchSize = 3;
+      const batches = [];
+      
+      for (let i = 0; i < electionsToFetch.length; i += batchSize) {
+        batches.push(electionsToFetch.slice(i, i + batchSize));
+      }
+
+      for (const batch of batches) {
+        const resultsPromises = batch.map(async (election) => {
+          // Check cache first
+          const cached = resultsCache.get(election.id);
+          if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            return { electionId: election.id, results: cached.data };
+          }
+
           try {
             const { data: resultsData, error: resultsError } = await supabase
               .rpc('get_election_results', { election_uuid: election.id });
 
-            if (!resultsError && resultsData) {
-              return { electionId: election.id, results: resultsData };
+            if (resultsError) {
+              console.warn(`Failed to fetch results for election ${election.id}:`, resultsError);
+              return { electionId: election.id, results: [] };
             }
-            return { electionId: election.id, results: [] };
+
+            const results = resultsData || [];
+            
+            // Cache the results
+            resultsCache.set(election.id, {
+              data: results,
+              timestamp: Date.now()
+            });
+
+            return { electionId: election.id, results };
           } catch (error) {
-            console.error(`Error fetching results for election ${election.id}:`, error);
+            console.warn(`Error fetching results for election ${election.id}:`, error);
             return { electionId: election.id, results: [] };
           }
         });
 
-        const allResults = await Promise.all(resultsPromises);
-        const resultsMap: Record<string, ElectionResult[]> = {};
+        const batchResults = await Promise.all(resultsPromises);
         
-        allResults.forEach(({ electionId, results }) => {
-          resultsMap[electionId] = results;
+        // Update results state with batch
+        setResults(prev => {
+          const newResults = { ...prev };
+          batchResults.forEach(({ electionId, results }) => {
+            newResults[electionId] = results;
+          });
+          return newResults;
         });
-
-        setResults(resultsMap);
       }
     } catch (error) {
-      console.error('Error fetching elections:', error);
+      console.error('Error fetching election results:', error);
     } finally {
-      setLoading(false);
+      setLoadingResults(false);
     }
-  };
+  }, []);
 
-  const filteredElections = elections.filter(election => {
-    const matchesSearch = election.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         election.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    if (!matchesSearch) return false;
+  const retryLoad = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchElections().finally(() => setLoading(false));
+  }, [fetchElections]);
 
-    if (statusFilter === 'all') return true;
-    
-    const status = getElectionStatus(election.start_date, election.end_date);
-    return status === statusFilter;
-  });
+  useEffect(() => {
+    fetchElections().finally(() => setLoading(false));
+  }, [fetchElections]);
+
+  // Lazy load results for elections that come into view
+  useEffect(() => {
+    if (filteredElections.length > 6) {
+      const remainingElections = filteredElections.slice(6);
+      const electionsWithoutResults = remainingElections.filter(
+        election => !results[election.id] && !resultsCache.has(election.id)
+      );
+      
+      if (electionsWithoutResults.length > 0) {
+        // Debounce the loading to avoid too many requests
+        const timeoutId = setTimeout(() => {
+          fetchResultsForElections(electionsWithoutResults);
+        }, 500);
+        
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [filteredElections, results, fetchResultsForElections]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -122,6 +199,22 @@ const Elections: React.FC = () => {
           </div>
           <p className="text-gray-600 font-medium">Loading elections...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="text-center py-12 bg-red-50 border-red-200 max-w-md">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-red-900 mb-2">Failed to Load Elections</h3>
+          <p className="text-red-700 mb-6">{error}</p>
+          <Button onClick={retryLoad} className="bg-red-600 hover:bg-red-700">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </Card>
       </div>
     );
   }
@@ -170,6 +263,14 @@ const Elections: React.FC = () => {
             ))}
           </div>
         </div>
+
+        {/* Loading indicator for results */}
+        {loadingResults && (
+          <div className="mb-4 flex items-center justify-center">
+            <LoadingSpinner size="sm" />
+            <span className="ml-2 text-gray-600 text-sm">Loading results...</span>
+          </div>
+        )}
 
         {/* Elections Grid */}
         {filteredElections.length > 0 ? (

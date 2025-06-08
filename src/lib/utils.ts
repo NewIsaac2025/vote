@@ -74,6 +74,9 @@ export const exportToCSV = (data: any[], filename: string): void => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  
+  // Clean up the URL object
+  URL.revokeObjectURL(url);
 };
 
 export const truncateAddress = (address: string, start = 6, end = 4): string => {
@@ -90,4 +93,93 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
     console.error('Failed to copy to clipboard:', error);
     return false;
   }
+};
+
+// Debounce function for performance optimization
+export const debounce = <T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): ((...args: Parameters<T>) => void) => {
+  let timeout: NodeJS.Timeout;
+  
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
+
+// Throttle function for performance optimization
+export const throttle = <T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): ((...args: Parameters<T>) => void) => {
+  let inThrottle: boolean;
+  
+  return (...args: Parameters<T>) => {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  };
+};
+
+// Memoization function for expensive calculations
+export const memoize = <T extends (...args: any[]) => any>(fn: T): T => {
+  const cache = new Map();
+  
+  return ((...args: any[]) => {
+    const key = JSON.stringify(args);
+    
+    if (cache.has(key)) {
+      return cache.get(key);
+    }
+    
+    const result = fn(...args);
+    cache.set(key, result);
+    
+    return result;
+  }) as T;
+};
+
+// Format numbers with proper locale formatting
+export const formatNumber = (num: number): string => {
+  return new Intl.NumberFormat('en-US').format(num);
+};
+
+// Calculate percentage with proper rounding
+export const calculatePercentage = (value: number, total: number): number => {
+  if (total === 0) return 0;
+  return Math.round((value / total) * 100 * 100) / 100; // Round to 2 decimal places
+};
+
+// Check if a date is within a range
+export const isDateInRange = (date: string, startDate: string, endDate: string): boolean => {
+  const checkDate = new Date(date);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  return checkDate >= start && checkDate <= end;
+};
+
+// Get time remaining until a date
+export const getTimeRemaining = (targetDate: string): {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  total: number;
+} => {
+  const total = Date.parse(targetDate) - Date.now();
+  
+  if (total <= 0) {
+    return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0 };
+  }
+  
+  const seconds = Math.floor((total / 1000) % 60);
+  const minutes = Math.floor((total / 1000 / 60) % 60);
+  const hours = Math.floor((total / (1000 * 60 * 60)) % 24);
+  const days = Math.floor(total / (1000 * 60 * 60 * 24));
+  
+  return { days, hours, minutes, seconds, total };
 };
