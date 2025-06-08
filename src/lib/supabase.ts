@@ -35,7 +35,7 @@ if (supabaseAnonKey.includes('your-anon-key') || supabaseAnonKey === 'your-anon-
   throw new Error('Please replace the placeholder Supabase anon key with your actual anon key from https://supabase.com/dashboard');
 }
 
-// Create Supabase client with optimized configuration
+// Create Supabase client with optimized configuration for maximum performance
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -52,21 +52,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     headers: {
       'x-client-info': 'univote-web'
     }
+  },
+  db: {
+    schema: 'public'
   }
 });
 
-// Test connection function with improved error handling
+// Test connection function with improved error handling and timeout
 export const testSupabaseConnection = async (): Promise<boolean> => {
   try {
     if (import.meta.env.DEV) {
       console.log('Testing Supabase connection...');
     }
     
+    // Create a promise that will timeout after 5 seconds
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Connection timeout')), 5000);
+    });
+    
     // Simple health check - try to get a count from elections table
-    const { data, error } = await supabase
+    const connectionPromise = supabase
       .from('elections')
       .select('id', { count: 'exact', head: true })
       .limit(1);
+    
+    const { data, error } = await Promise.race([connectionPromise, timeoutPromise]);
     
     if (error) {
       console.error('Supabase connection test failed:', error);
@@ -94,6 +104,11 @@ export const testSupabaseConnection = async (): Promise<boolean> => {
     // Handle network errors specifically
     if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
       throw new Error('Unable to reach Supabase server. Please check your VITE_SUPABASE_URL and internet connection.');
+    }
+    
+    // Handle timeout errors
+    if (error instanceof Error && error.message.includes('timeout')) {
+      throw new Error('Connection timeout. Please check your internet connection and try again.');
     }
     
     // Re-throw custom errors
