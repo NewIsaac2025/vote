@@ -3,9 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Debug logging for environment variables
-console.log('Supabase URL:', supabaseUrl);
-console.log('Supabase Anon Key exists:', !!supabaseAnonKey);
+// Debug logging for environment variables (only in development)
+if (import.meta.env.DEV) {
+  console.log('Supabase URL:', supabaseUrl);
+  console.log('Supabase Anon Key exists:', !!supabaseAnonKey);
+}
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables:', {
@@ -54,14 +56,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 // Test connection function with improved error handling
-export const testSupabaseConnection = async () => {
+export const testSupabaseConnection = async (): Promise<boolean> => {
   try {
-    console.log('Testing Supabase connection...');
+    if (import.meta.env.DEV) {
+      console.log('Testing Supabase connection...');
+    }
     
-    // Simple health check - try to get the current timestamp from the database
+    // Simple health check - try to get a count from elections table
     const { data, error } = await supabase
       .from('elections')
-      .select('count')
+      .select('id', { count: 'exact', head: true })
       .limit(1);
     
     if (error) {
@@ -80,7 +84,9 @@ export const testSupabaseConnection = async () => {
       throw new Error(`Database connection failed: ${error.message}`);
     }
     
-    console.log('Supabase connection test successful');
+    if (import.meta.env.DEV) {
+      console.log('Supabase connection test successful');
+    }
     return true;
   } catch (error) {
     console.error('Supabase connection test error:', error);
