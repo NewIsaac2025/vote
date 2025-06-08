@@ -21,10 +21,16 @@ interface CreateElectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  existingElectionId?: string; // For adding candidates to existing election
 }
 
-const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const [step, setStep] = useState(1);
+const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSuccess, 
+  existingElectionId 
+}) => {
+  const [step, setStep] = useState(existingElectionId ? 2 : 1); // Skip to candidates if adding to existing election
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
@@ -111,26 +117,32 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
   };
 
   const handleCreateElection = async () => {
-    if (!validateElection() || !validateCandidates()) return;
+    if (!existingElectionId && !validateElection()) return;
+    if (!validateCandidates()) return;
 
     setLoading(true);
     setError('');
 
     try {
-      // Create election
-      const { data: electionResult, error: electionError } = await supabase
-        .from('elections')
-        .insert({
-          title: electionData.title.trim(),
-          description: electionData.description.trim(),
-          start_date: electionData.start_date,
-          end_date: electionData.end_date,
-          is_active: true
-        })
-        .select()
-        .single();
+      let electionId = existingElectionId;
 
-      if (electionError) throw electionError;
+      // Create election if not adding to existing one
+      if (!existingElectionId) {
+        const { data: electionResult, error: electionError } = await supabase
+          .from('elections')
+          .insert({
+            title: electionData.title.trim(),
+            description: electionData.description.trim(),
+            start_date: electionData.start_date,
+            end_date: electionData.end_date,
+            is_active: true
+          })
+          .select()
+          .single();
+
+        if (electionError) throw electionError;
+        electionId = electionResult.id;
+      }
 
       // Create candidates
       const candidatesWithElectionId = candidates.map(candidate => ({
@@ -142,7 +154,7 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
         manifesto: candidate.manifesto.trim(),
         image_url: candidate.image_url.trim(),
         video_url: candidate.video_url.trim(),
-        election_id: electionResult.id
+        election_id: electionId
       }));
 
       const { error: candidatesError } = await supabase
@@ -163,7 +175,7 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
   };
 
   const resetForm = () => {
-    setStep(1);
+    setStep(existingElectionId ? 2 : 1);
     setElectionData({
       title: '',
       description: '',
@@ -185,7 +197,7 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
 
   // Set default dates
   React.useEffect(() => {
-    if (isOpen && !electionData.start_date) {
+    if (isOpen && !electionData.start_date && !existingElectionId) {
       const now = new Date();
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -198,7 +210,7 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
         end_date: nextWeek.toISOString().slice(0, 16)
       }));
     }
-  }, [isOpen]);
+  }, [isOpen, existingElectionId]);
 
   if (!isOpen) return null;
 
@@ -209,8 +221,15 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">Create New Election</h2>
-              <p className="text-blue-100">Step {step} of 2 - Build your election quickly and easily</p>
+              <h2 className="text-2xl font-bold">
+                {existingElectionId ? 'Add Candidates' : 'Create New Election'}
+              </h2>
+              <p className="text-blue-100">
+                {existingElectionId 
+                  ? 'Add new candidates to the existing election'
+                  : `Step ${step} of 2 - Build your election quickly and easily`
+                }
+              </p>
             </div>
             <button
               onClick={onClose}
@@ -228,8 +247,8 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
             </div>
           )}
 
-          {/* Step 1: Election Details */}
-          {step === 1 && (
+          {/* Step 1: Election Details - Skip if adding to existing election */}
+          {step === 1 && !existingElectionId && (
             <div className="space-y-6">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Election Information</h3>
@@ -305,12 +324,19 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
           )}
 
           {/* Step 2: Candidates */}
-          {step === 2 && (
+          {(step === 2 || existingElectionId) && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-bold text-gray-900">Election Candidates</h3>
-                  <p className="text-gray-600">Add candidates who will participate in this election</p>
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    {existingElectionId ? 'Add New Candidates' : 'Election Candidates'}
+                  </h3>
+                  <p className="text-gray-600">
+                    {existingElectionId 
+                      ? 'Add new candidates to the existing election'
+                      : 'Add candidates who will participate in this election'
+                    }
+                  </p>
                 </div>
                 <Button
                   onClick={addCandidate}
@@ -433,25 +459,31 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({ isOpen, onClo
                   <li>• Profile images should be professional headshots (optional)</li>
                   <li>• Campaign videos help voters connect with candidates (optional)</li>
                   <li>• Manifestos should be clear and specific about goals</li>
+                  {existingElectionId && <li>• New candidates can be added even during active elections</li>}
                 </ul>
               </div>
 
               <div className="flex justify-between">
-                <Button
-                  onClick={() => setStep(1)}
-                  variant="outline"
-                  size="lg"
-                >
-                  Back to Election Details
-                </Button>
+                {!existingElectionId && (
+                  <Button
+                    onClick={() => setStep(1)}
+                    variant="outline"
+                    size="lg"
+                  >
+                    Back to Election Details
+                  </Button>
+                )}
                 <Button
                   onClick={handleCreateElection}
                   loading={loading}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 px-8"
+                  className="bg-gradient-to-r from-green-600 to-emerald-600 px-8 ml-auto"
                   size="lg"
                 >
                   <Save className="h-4 w-4 mr-2" />
-                  {loading ? 'Creating Election...' : 'Create Election'}
+                  {loading 
+                    ? (existingElectionId ? 'Adding Candidates...' : 'Creating Election...') 
+                    : (existingElectionId ? 'Add Candidates' : 'Create Election')
+                  }
                 </Button>
               </div>
             </div>

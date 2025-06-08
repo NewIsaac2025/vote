@@ -97,7 +97,7 @@ const ElectionDetails: React.FC = () => {
       if (candidatesError) throw candidatesError;
       setCandidates(candidatesData || []);
 
-      // Fetch results using the new function
+      // Fetch results using the function
       const { data: resultsData, error: resultsError } = await supabase
         .rpc('get_election_results', { election_uuid: id });
 
@@ -376,7 +376,7 @@ const ElectionDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Live Vote Tracker */}
+        {/* Live Vote Tracker - Only show during active elections or if there are votes */}
         {(status === 'active' || totalVotes > 0) && (
           <div className="mb-8">
             <LiveVoteTracker electionId={election.id} isActive={status === 'active'} />
@@ -502,6 +502,7 @@ const ElectionDetails: React.FC = () => {
                 onSelect={handleCandidateSelect}
                 onVote={handleCandidateVote}
                 isVoting={voting}
+                electionStatus={status}
               />
             );
           })}

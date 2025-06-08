@@ -3,7 +3,7 @@ import {
   Plus, Users, Vote, BarChart3, Settings, 
   Calendar, Clock, Edit3, Trash2, Eye,
   UserCheck, AlertCircle, TrendingUp, Download,
-  Activity, Award, Target
+  Activity, Award, Target, UserPlus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatDate, getElectionStatus, exportToCSV } from '../lib/utils';
@@ -56,6 +56,7 @@ const Admin: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedElectionForCandidates, setSelectedElectionForCandidates] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -144,6 +145,16 @@ const Admin: React.FC = () => {
       console.error('Error deleting election:', error);
       alert('Failed to delete election');
     }
+  };
+
+  const handleAddCandidates = (electionId: string) => {
+    setSelectedElectionForCandidates(electionId);
+    setShowCreateModal(true);
+  };
+
+  const handleModalClose = () => {
+    setShowCreateModal(false);
+    setSelectedElectionForCandidates(null);
   };
 
   const tabs = [
@@ -356,6 +367,14 @@ const Admin: React.FC = () => {
                             <BarChart3 className="h-4 w-4" />
                           </a>
                         </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleAddCandidates(election.id)}
+                          className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   );
@@ -409,6 +428,15 @@ const Admin: React.FC = () => {
                           <a href={`/results/${election.id}`} target="_blank" rel="noopener noreferrer">
                             <BarChart3 className="h-4 w-4" />
                           </a>
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleAddCandidates(election.id)}
+                          className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                          title="Add Candidates"
+                        >
+                          <UserPlus className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="outline" 
@@ -521,6 +549,13 @@ const Admin: React.FC = () => {
                   </div>
                   <input type="checkbox" className="rounded" defaultChecked />
                 </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">Allow Adding Candidates During Elections</p>
+                    <p className="text-sm text-gray-600">Permit admins to add new candidates to active elections</p>
+                  </div>
+                  <input type="checkbox" className="rounded" defaultChecked />
+                </div>
               </div>
             </Card>
 
@@ -541,6 +576,13 @@ const Admin: React.FC = () => {
                   </div>
                   <input type="checkbox" className="rounded" defaultChecked />
                 </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">Winner Declaration</p>
+                    <p className="text-sm text-gray-600">Only declare winners after election ends</p>
+                  </div>
+                  <input type="checkbox" className="rounded" defaultChecked />
+                </div>
               </div>
             </Card>
           </div>
@@ -550,8 +592,9 @@ const Admin: React.FC = () => {
       {/* Create Election Modal */}
       <CreateElectionModal
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={handleModalClose}
         onSuccess={fetchData}
+        existingElectionId={selectedElectionForCandidates}
       />
     </div>
   );

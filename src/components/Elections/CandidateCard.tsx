@@ -31,6 +31,7 @@ interface CandidateCardProps {
   onSelect?: (candidateId: string) => void;
   onVote?: (candidateId: string) => void;
   isVoting?: boolean;
+  electionStatus?: 'upcoming' | 'active' | 'ended';
 }
 
 const CandidateCard: React.FC<CandidateCardProps> = ({
@@ -43,7 +44,8 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
   isActiveElection = false,
   onSelect,
   onVote,
-  isVoting = false
+  isVoting = false,
+  electionStatus = 'upcoming'
 }) => {
   const [showFullManifesto, setShowFullManifesto] = useState(false);
 
@@ -81,6 +83,9 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
   // Safely get vote percentage with fallback
   const votePercentage = result?.vote_percentage ?? 0;
   const voteCount = result?.vote_count ?? 0;
+
+  // Only show winner if election has ended and there are votes
+  const showWinner = electionStatus === 'ended' && rank === 1 && voteCount > 0;
 
   return (
     <Card 
@@ -130,14 +135,14 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
           </div>
         </div>
 
-        {/* Rank and Results */}
+        {/* Rank and Results - Only show if election has ended */}
         <div className="text-right">
-          {showResults && rank && (
+          {showResults && rank && electionStatus === 'ended' && (
             <div className="mb-2">
               <span className="text-2xl">{getRankIcon(rank)}</span>
             </div>
           )}
-          {result && (
+          {result && showResults && (
             <div>
               <div className="flex items-center space-x-1 text-gray-600 mb-1">
                 <TrendingUp className="h-4 w-4" />
@@ -149,8 +154,8 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
         </div>
       </div>
 
-      {/* Vote Progress Bar */}
-      {showResults && result && voteCount > 0 && (
+      {/* Vote Progress Bar - Only show if election has ended */}
+      {showResults && result && voteCount > 0 && electionStatus === 'ended' && (
         <div className="mb-4">
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
@@ -267,8 +272,8 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
         </div>
       )}
 
-      {/* Winner Badge */}
-      {showResults && rank === 1 && result && voteCount > 0 && (
+      {/* Winner Badge - Only show when election has ended */}
+      {showWinner && (
         <div className="absolute top-4 left-4">
           <div className="bg-gradient-to-r from-yellow-400 to-orange-400 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center space-x-1">
             <Award className="h-3 w-3" />
