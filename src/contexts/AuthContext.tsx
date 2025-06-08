@@ -185,10 +185,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setStudent(null);
       setIsAdmin(false);
       
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('Error signing out:', error);
+      // Only call Supabase signOut if there's an active user session
+      if (user) {
+        const { error } = await supabase.auth.signOut();
+        
+        if (error) {
+          console.error('Error signing out:', error);
+        }
       }
       
     } catch (error) {
