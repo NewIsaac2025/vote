@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Upload, X, Image as ImageIcon, Camera, AlertCircle } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import { Upload, X, Image as ImageIcon, Camera, AlertCircle, Check } from 'lucide-react';
 import Button from './Button';
 
 interface ImageUploadProps {
@@ -24,10 +24,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = async (file: File) => {
+  const handleFileSelect = useCallback(async (file: File) => {
     setError('');
+    setUploadSuccess(false);
     
     // Validate file type
     if (!file.type.startsWith('image/')) {
@@ -47,31 +49,38 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       // Convert to base64 for demo purposes
       // In production, you would upload to a cloud storage service
       const reader = new FileReader();
+      
       reader.onload = (e) => {
         const result = e.target?.result as string;
         onChange(result);
         setUploading(false);
+        setUploadSuccess(true);
+        
+        // Clear success message after 2 seconds
+        setTimeout(() => setUploadSuccess(false), 2000);
       };
+      
       reader.onerror = () => {
         setError('Failed to read file');
         setUploading(false);
       };
+      
       reader.readAsDataURL(file);
     } catch (error) {
       console.error('Upload error:', error);
       setError('Failed to upload image');
       setUploading(false);
     }
-  };
+  }, [maxSize, onChange]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       handleFileSelect(file);
     }
-  };
+  }, [handleFileSelect]);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     
@@ -79,19 +88,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     if (file) {
       handleFileSelect(file);
     }
-  };
+  }, [handleFileSelect]);
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(true);
-  };
+  }, []);
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-  };
+  }, []);
 
-  const handleRemove = () => {
+  const handleRemove = useCallback(() => {
     if (onRemove) {
       onRemove();
     } else {
@@ -100,7 +109,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  };
+    setError('');
+    setUploadSuccess(false);
+  }, [onRemove, onChange]);
+
+  const handleChangeClick = useCallback(() => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  }, []);
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -118,14 +135,16 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               src={value}
               alt="Preview"
               className="w-full h-full object-cover"
+              loading="lazy"
             />
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <div className="flex space-x-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="bg-white/90 text-gray-900 border-white/90"
+                  onClick={handleChangeClick}
+                  disabled={uploading}
+                  className="bg-white/90 text-gray-900 border-white/90 hover:bg-white hover:scale-105 transition-all duration-200"
                 >
                   <Camera className="h-4 w-4 mr-1" />
                   Change
@@ -134,7 +153,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                   size="sm"
                   variant="outline"
                   onClick={handleRemove}
-                  className="bg-red-500/90 text-white border-red-500/90 hover:bg-red-600/90"
+                  disabled={uploading}
+                  className="bg-red-500/90 text-white border-red-500/90 hover:bg-red-600/90 hover:scale-105 transition-all duration-200"
                 >
                   <X className="h-4 w-4 mr-1" />
                   Remove
@@ -146,19 +166,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       ) : (
         // Upload Area
         <div
-          className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 ${
+          className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 cursor-pointer ${
             dragOver
-              ? 'border-blue-500 bg-blue-50'
+              ? 'border-blue-500 bg-blue-50 scale-[1.02]'
               : uploading
               ? 'border-gray-300 bg-gray-50'
-              : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/50'
+              : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/50 hover:scale-[1.01]'
           }`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
+          onClick={handleChangeClick}
         >
           <div className="space-y-4">
-            <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${
+            <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 ${
               uploading ? 'bg-blue-100' : 'bg-gray-100'
             }`}>
               {uploading ? (
@@ -181,9 +202,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleChangeClick}
               disabled={uploading}
-              className="mx-auto"
+              className="mx-auto hover:scale-105 transition-transform"
             >
               <Upload className="h-4 w-4 mr-2" />
               Choose File
@@ -192,6 +213,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         </div>
       )}
 
+      {/* Success Message */}
+      {uploadSuccess && (
+        <div className="flex items-center space-x-2 text-green-600 text-sm">
+          <Check className="h-4 w-4" />
+          <span>Image uploaded successfully!</span>
+        </div>
+      )}
+
+      {/* Error Message */}
       {error && (
         <div className="flex items-center space-x-2 text-red-600 text-sm">
           <AlertCircle className="h-4 w-4" />

@@ -23,7 +23,7 @@ try {
   throw new Error('Invalid Supabase URL format. Please check your VITE_SUPABASE_URL in .env file.');
 }
 
-// Create Supabase client with improved configuration
+// Create Supabase client with optimized configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -45,7 +45,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       return fetch(url, {
         ...options,
         // Add timeout to prevent hanging requests
-        signal: AbortSignal.timeout(30000) // 30 second timeout
+        signal: AbortSignal.timeout(15000) // Reduced to 15 seconds for faster feedback
       }).catch(error => {
         console.error('Supabase fetch error:', error);
         throw error;
@@ -54,13 +54,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Test connection function
+// Test connection function with improved error handling
 export const testSupabaseConnection = async () => {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
     const { data, error } = await supabase
       .from('elections')
       .select('count')
-      .limit(1);
+      .limit(1)
+      .abortSignal(controller.signal);
+    
+    clearTimeout(timeoutId);
     
     if (error) {
       console.error('Supabase connection test failed:', error);
