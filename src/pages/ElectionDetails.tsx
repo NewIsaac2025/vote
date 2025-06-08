@@ -127,15 +127,36 @@ const ElectionDetails: React.FC = () => {
     }
   };
 
-  const handleVote = async () => {
-    if (!selectedCandidate || !student || !election) {
-      setError('Please select a candidate to vote for');
+  const handleCandidateSelect = async (candidateId: string) => {
+    if (!student || !election || hasVoted || voting) {
+      return;
+    }
+
+    const status = getElectionStatus(election.start_date, election.end_date);
+    if (status !== 'active') {
+      setError('Voting is not currently active for this election');
+      return;
+    }
+
+    if (!student.verified) {
+      setError('Please verify your account to vote');
+      return;
+    }
+
+    // Show confirmation dialog
+    const candidateName = candidates.find(c => c.id === candidateId)?.full_name;
+    const confirmed = window.confirm(
+      `Are you sure you want to vote for ${candidateName}?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) {
       return;
     }
 
     setVoting(true);
     setError('');
     setSuccess('');
+    setSelectedCandidate(candidateId);
 
     try {
       // Check if user has already voted
@@ -182,7 +203,7 @@ const ElectionDetails: React.FC = () => {
       // Generate vote hash for blockchain security
       const voteHash = generateVoteHash(
         student.id,
-        selectedCandidate,
+        candidateId,
         election.id,
         walletAddress
       );
@@ -192,7 +213,7 @@ const ElectionDetails: React.FC = () => {
         .from('votes')
         .insert({
           student_id: student.id,
-          candidate_id: selectedCandidate,
+          candidate_id: candidateId,
           election_id: election.id,
           wallet_address: walletAddress,
           vote_hash: voteHash
@@ -214,15 +235,15 @@ const ElectionDetails: React.FC = () => {
       }
 
       // Get candidate name for confirmation
-      const selectedCandidateData = candidates.find(c => c.id === selectedCandidate);
-      const candidateName = selectedCandidateData?.full_name || 'Unknown Candidate';
+      const selectedCandidateData = candidates.find(c => c.id === candidateId);
+      const candidateNameForEmail = selectedCandidateData?.full_name || 'Unknown Candidate';
 
       // Send confirmation email
       try {
         await sendEmail({
           to: student.email,
           subject: `Vote Confirmation - ${election.title}`,
-          html: generateVoteConfirmationEmail(student.full_name, candidateName, election.title)
+          html: generateVoteConfirmationEmail(student.full_name, candidateNameForEmail, election.title)
         });
       } catch (emailError) {
         console.error('Failed to send confirmation email:', emailError);
@@ -231,7 +252,7 @@ const ElectionDetails: React.FC = () => {
 
       // Update local state
       setHasVoted(true);
-      setSuccess(`Vote successfully cast for ${candidateName}! Thank you for participating.`);
+      setSuccess(`Vote successfully cast for ${candidateNameForEmail}! Thank you for participating.`);
       
       // Refresh results
       await fetchElectionData();
@@ -239,6 +260,7 @@ const ElectionDetails: React.FC = () => {
     } catch (error: any) {
       console.error('Voting error:', error);
       setError(error.message || 'Failed to cast vote. Please try again.');
+      setSelectedCandidate(null);
     } finally {
       setVoting(false);
     }
@@ -273,7 +295,7 @@ const ElectionDetails: React.FC = () => {
 
   const status = getElectionStatus(election.start_date, election.end_date);
   const totalVotes = results.reduce((sum, result) => sum + result.vote_count, 0);
-  const canVote = status === 'active' && user && student?.verified && !hasVoted;
+  const canVote = status === 'active' && user && student?.verified && !hasVoted && !voting;
 
   return (
     <div className="min-h-screen py-12">
@@ -369,12 +391,20 @@ const ElectionDetails: React.FC = () => {
                   <Vote className="h-6 w-6 text-blue-600" />
                   <div>
                     <p className="font-medium text-gray-900">Ready to Vote</p>
-                    <p className="text-sm text-gray-600">Select a candidate below to cast your vote</p>
+                    <p className="text-sm text-gray-600">Click on a candidate below to cast your vote instantly</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2 text-green-600">
                   <Shield className="h-4 w-4" />
                   <span className="text-sm font-medium">Blockchain Secured</span>
+                </div>
+              </div>
+            ) : voting ? (
+              <div className="flex items-center space-x-3 text-blue-600">
+                <LoadingSpinner size="sm" />
+                <div>
+                  <p className="font-medium">Processing Vote...</p>
+                  <p className="text-sm text-gray-600">Please wait while we record your vote securely</p>
                 </div>
               </div>
             ) : !user ? (
@@ -417,6 +447,19 @@ const ElectionDetails: React.FC = () => {
           </Card>
         )}
 
+        {/* Voting Instructions */}
+        {canVote && !hasVoted && (
+          <Card className="mb-8 bg-blue-50 border-blue-200">
+            <div className="flex items-center space-x-3 text-blue-800">
+              <Vote className="h-5 w-5" />
+              <div>
+                <p className="font-medium">How to Vote</p>
+                <p className="text-sm">Simply click on your preferred candidate below. You'll be asked to confirm your choice before the vote is recorded.</p>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Candidates */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {candidates.map((candidate, index) => {
@@ -436,40 +479,11 @@ const ElectionDetails: React.FC = () => {
                 canVote={canVote}
                 showResults={status !== 'upcoming'}
                 rank={candidateResult ? rank : undefined}
-                onSelect={setSelectedCandidate}
+                onSelect={handleCandidateSelect}
               />
             );
           })}
         </div>
-
-        {/* Vote Button */}
-        {canVote && selectedCandidate && (
-          <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-            <div className="mb-4">
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Confirm Your Vote</h3>
-              <p className="text-gray-600">
-                You are about to vote for{' '}
-                <span className="font-medium text-blue-600">
-                  {candidates.find(c => c.id === selectedCandidate)?.full_name}
-                </span>
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                This action cannot be undone. Your vote will be secured on the blockchain.
-              </p>
-            </div>
-            
-            <Button
-              onClick={handleVote}
-              loading={voting}
-              disabled={voting}
-              size="lg"
-              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-            >
-              <Wallet className="mr-2 h-5 w-5" />
-              {voting ? 'Casting Vote...' : 'Cast Vote Securely'}
-            </Button>
-          </Card>
-        )}
       </div>
     </div>
   );
