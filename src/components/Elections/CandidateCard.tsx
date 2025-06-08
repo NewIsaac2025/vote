@@ -65,6 +65,10 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
     }
   };
 
+  // Safely get vote percentage with fallback
+  const votePercentage = result?.vote_percentage ?? 0;
+  const voteCount = result?.vote_count ?? 0;
+
   return (
     <Card 
       className={`transition-all duration-300 backdrop-blur-sm bg-white/90 border-white/20 ${
@@ -124,21 +128,21 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
             <div>
               <div className="flex items-center space-x-1 text-gray-600 mb-1">
                 <TrendingUp className="h-4 w-4" />
-                <span className="text-sm font-medium">{result.vote_count} votes</span>
+                <span className="text-sm font-medium">{voteCount} votes</span>
               </div>
-              <div className="text-lg font-bold text-blue-600">{result.vote_percentage.toFixed(1)}%</div>
+              <div className="text-lg font-bold text-blue-600">{votePercentage.toFixed(1)}%</div>
             </div>
           )}
         </div>
       </div>
 
       {/* Vote Progress Bar */}
-      {showResults && result && result.vote_count > 0 && (
+      {showResults && result && voteCount > 0 && (
         <div className="mb-4">
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
               className={`bg-gradient-to-r ${getRankColor(rank || 0)} h-2 rounded-full transition-all duration-1000`}
-              style={{ width: `${Math.min(result.vote_percentage, 100)}%` }}
+              style={{ width: `${Math.min(votePercentage, 100)}%` }}
             ></div>
           </div>
         </div>
@@ -235,7 +239,7 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
       )}
 
       {/* Winner Badge */}
-      {showResults && rank === 1 && result && result.vote_count > 0 && (
+      {showResults && rank === 1 && result && voteCount > 0 && (
         <div className="absolute top-4 left-4">
           <div className="bg-gradient-to-r from-yellow-400 to-orange-400 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center space-x-1">
             <Award className="h-3 w-3" />
