@@ -15,6 +15,7 @@ import Button from '../components/UI/Button';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import CandidateCard from '../components/Elections/CandidateCard';
 import LiveVoteTracker from '../components/Elections/LiveVoteTracker';
+import VoteConfirmationModal from '../components/UI/VoteConfirmationModal';
 
 interface Election {
   id: string;
@@ -62,6 +63,8 @@ const ElectionDetails: React.FC = () => {
   const [voting, setVoting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showVoteModal, setShowVoteModal] = useState(false);
+  const [candidateToVote, setCandidateToVote] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -144,20 +147,20 @@ const ElectionDetails: React.FC = () => {
       return;
     }
 
-    // Show confirmation dialog
-    const candidateName = candidates.find(c => c.id === candidateId)?.full_name;
-    const confirmed = window.confirm(
-      `Are you sure you want to vote for ${candidateName}?\n\nThis action cannot be undone and your vote will be recorded on the blockchain.`
-    );
+    // Show confirmation modal instead of browser confirm
+    setCandidateToVote(candidateId);
+    setShowVoteModal(true);
+  };
 
-    if (!confirmed) {
+  const handleVoteConfirm = async () => {
+    if (!candidateToVote || !student || !election) {
       return;
     }
 
     setVoting(true);
     setError('');
     setSuccess('');
-    setSelectedCandidate(candidateId);
+    setShowVoteModal(false);
 
     try {
       // Check if user has already voted
@@ -204,7 +207,7 @@ const ElectionDetails: React.FC = () => {
       // Generate vote hash for blockchain security
       const voteHash = generateVoteHash(
         student.id,
-        candidateId,
+        candidateToVote,
         election.id,
         walletAddress
       );
@@ -214,7 +217,7 @@ const ElectionDetails: React.FC = () => {
         .from('votes')
         .insert({
           student_id: student.id,
-          candidate_id: candidateId,
+          candidate_id: candidateToVote,
           election_id: election.id,
           wallet_address: walletAddress,
           vote_hash: voteHash
@@ -236,7 +239,7 @@ const ElectionDetails: React.FC = () => {
       }
 
       // Get candidate name for confirmation
-      const selectedCandidateData = candidates.find(c => c.id === candidateId);
+      const selectedCandidateData = candidates.find(c => c.id === candidateToVote);
       const candidateNameForEmail = selectedCandidateData?.full_name || 'Unknown Candidate';
 
       // Send confirmation email
@@ -261,10 +264,15 @@ const ElectionDetails: React.FC = () => {
     } catch (error: any) {
       console.error('Voting error:', error);
       setError(error.message || 'Failed to cast vote. Please try again.');
-      setSelectedCandidate(null);
     } finally {
       setVoting(false);
+      setCandidateToVote(null);
     }
+  };
+
+  const handleVoteCancel = () => {
+    setShowVoteModal(false);
+    setCandidateToVote(null);
   };
 
   const handleCandidateSelect = (candidateId: string) => {
@@ -304,6 +312,9 @@ const ElectionDetails: React.FC = () => {
   const totalVotes = results.reduce((sum, result) => sum + result.vote_count, 0);
   const canVote = status === 'active' && user && student?.verified && !hasVoted && !voting;
   const isActiveElection = status === 'active';
+
+  // Get candidate details for the modal
+  const candidateForModal = candidateToVote ? candidates.find(c => c.id === candidateToVote) : null;
 
   return (
     <div className="min-h-screen py-12">
@@ -462,7 +473,7 @@ const ElectionDetails: React.FC = () => {
               <Vote className="h-5 w-5" />
               <div>
                 <p className="font-medium">How to Vote</p>
-                <p className="text-sm">Click the "Cast Your Vote" button on your preferred candidate. You'll be asked to confirm your choice before the vote is recorded on the blockchain.</p>
+                <p className="text-sm">Click the "Cast Your Vote" button on your preferred candidate. You'll see a confirmation modal before your vote is recorded on the blockchain.</p>
               </div>
             </div>
           </Card>
@@ -495,6 +506,20 @@ const ElectionDetails: React.FC = () => {
             );
           })}
         </div>
+
+        {/* Vote Confirmation Modal */}
+        {candidateForModal && (
+          <VoteConfirmationModal
+            isOpen={showVoteModal}
+            candidateName={candidateForModal.full_name}
+            candidateDepartment={candidateForModal.department}
+            candidateCourse={candidateForModal.course}
+            electionTitle={election.title}
+            onConfirm={handleVoteConfirm}
+            onCancel={handleVoteCancel}
+            isLoading={voting}
+          />
+        )}
       </div>
     </div>
   );
