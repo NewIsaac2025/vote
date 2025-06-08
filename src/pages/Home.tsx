@@ -7,6 +7,7 @@ import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import HowItWorks from '../components/Home/HowItWorks';
 import TechnologySection from '../components/Home/TechnologySection';
+import RegistrationGuide from '../components/Home/RegistrationGuide';
 
 interface Election {
   id: string;
@@ -302,6 +303,9 @@ const Home: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Registration Guide Section */}
+      <RegistrationGuide />
 
       {/* How It Works Section */}
       <HowItWorks />
