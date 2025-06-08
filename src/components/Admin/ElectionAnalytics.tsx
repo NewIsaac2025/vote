@@ -53,11 +53,58 @@ const ElectionAnalytics: React.FC = () => {
 
       // Fetch analytics for each election
       const analyticsPromises = elections?.map(async (election) => {
-        const { data: stats, error: statsError } = await supabase
-          .rpc('get_election_stats', { election_uuid: election.id });
+        try {
+          // Use get_election_results instead of get_election_stats
+          const { data: results, error: resultsError } = await supabase
+            .rpc('get_election_results', { election_uuid: election.id });
 
-        if (statsError) {
-          console.error('Error fetching stats for election:', election.id, statsError);
+          // Fetch total candidates count separately
+          const { count: candidatesCount, error: candidatesError } = await supabase
+            .from('candidates')
+            .select('*', { count: 'exact', head: true })
+            .eq('election_id', election.id);
+
+          if (resultsError) {
+            console.error('Error fetching results for election:', election.id, resultsError);
+          }
+
+          if (candidatesError) {
+            console.error('Error fetching candidates count for election:', election.id, candidatesError);
+          }
+
+          // Calculate statistics from results
+          let totalVotes = 0;
+          let leadingCandidate = 'No votes yet';
+          let leadingVotes = 0;
+          let leadingPercentage = 0;
+
+          if (results && results.length > 0) {
+            // Calculate total votes and find leading candidate
+            totalVotes = results.reduce((sum: number, result: any) => sum + (result.vote_count || 0), 0);
+            
+            // Find candidate with most votes
+            const sortedResults = results.sort((a: any, b: any) => (b.vote_count || 0) - (a.vote_count || 0));
+            if (sortedResults.length > 0 && sortedResults[0].vote_count > 0) {
+              leadingCandidate = sortedResults[0].candidate_name || 'Unknown';
+              leadingVotes = sortedResults[0].vote_count || 0;
+              leadingPercentage = totalVotes > 0 ? (leadingVotes / totalVotes) * 100 : 0;
+            }
+          }
+
+          return {
+            id: election.id,
+            title: election.title,
+            start_date: election.start_date,
+            end_date: election.end_date,
+            total_votes: totalVotes,
+            total_candidates: candidatesCount || 0,
+            leading_candidate: leadingCandidate,
+            leading_votes: leadingVotes,
+            leading_percentage: leadingPercentage,
+            voter_turnout: 0 // Cannot calculate without total student count
+          };
+        } catch (error) {
+          console.error('Error processing election analytics:', election.id, error);
           return {
             id: election.id,
             title: election.title,
@@ -71,20 +118,6 @@ const ElectionAnalytics: React.FC = () => {
             voter_turnout: 0
           };
         }
-
-        const statsData = stats?.[0] || {};
-        return {
-          id: election.id,
-          title: election.title,
-          start_date: election.start_date,
-          end_date: election.end_date,
-          total_votes: statsData.total_votes || 0,
-          total_candidates: statsData.total_candidates || 0,
-          leading_candidate: statsData.leading_candidate_name || 'No votes yet',
-          leading_votes: statsData.leading_candidate_votes || 0,
-          leading_percentage: statsData.leading_candidate_percentage || 0,
-          voter_turnout: statsData.voter_turnout_percentage || 0
-        };
       }) || [];
 
       const analyticsData = await Promise.all(analyticsPromises);
