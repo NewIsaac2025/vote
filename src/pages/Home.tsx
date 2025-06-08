@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Vote, Shield, Zap, Users, ArrowRight, Trophy, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Vote, Shield, Zap, Users, ArrowRight, Trophy, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase, testSupabaseConnection } from '../lib/supabase';
 import { getElectionStatus, formatDate } from '../lib/utils';
 import Card from '../components/UI/Card';
@@ -39,6 +39,9 @@ const Home: React.FC = () => {
   const initializeConnection = async () => {
     try {
       setConnectionStatus('testing');
+      setError(null);
+      setLoading(true);
+      
       const isConnected = await testSupabaseConnection();
       
       if (isConnected) {
@@ -51,7 +54,14 @@ const Home: React.FC = () => {
     } catch (error) {
       console.error('Connection initialization error:', error);
       setConnectionStatus('failed');
-      setError('Failed to initialize database connection. Please refresh the page.');
+      
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Failed to initialize database connection. Please refresh the page.');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -100,14 +110,10 @@ const Home: React.FC = () => {
     } catch (error) {
       console.error('Error fetching elections:', error);
       setError(error instanceof Error ? error.message : 'An unexpected error occurred while fetching elections.');
-    } finally {
-      setLoading(false);
     }
   };
 
   const retryConnection = () => {
-    setLoading(true);
-    setError(null);
     initializeConnection();
   };
 
@@ -266,10 +272,16 @@ const Home: React.FC = () => {
             <Card className="text-center py-8 mb-8 bg-red-50 border-red-200">
               <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-red-900 mb-2">Connection Failed</h3>
-              <p className="text-red-700 mb-4">{error}</p>
-              <Button onClick={retryConnection} className="bg-red-600 hover:bg-red-700">
-                Retry Connection
-              </Button>
+              <p className="text-red-700 mb-4 max-w-2xl mx-auto">{error}</p>
+              <div className="space-y-2">
+                <Button onClick={retryConnection} className="bg-red-600 hover:bg-red-700">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retry Connection
+                </Button>
+                <p className="text-sm text-red-600">
+                  If this persists, please check your Supabase configuration in the .env file
+                </p>
+              </div>
             </Card>
           )}
 
@@ -286,6 +298,7 @@ const Home: React.FC = () => {
                   <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Elections</h3>
                   <p className="text-red-700 mb-4">{error}</p>
                   <Button onClick={retryConnection} className="bg-red-600 hover:bg-red-700">
+                    <RefreshCw className="h-4 w-4 mr-2" />
                     Try Again
                   </Button>
                 </Card>

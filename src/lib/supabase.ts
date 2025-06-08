@@ -39,17 +39,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'x-client-info': 'univote-web'
-    },
-    fetch: (url, options = {}) => {
-      console.log('Supabase fetch request:', url);
-      return fetch(url, {
-        ...options,
-        // Increased timeout to 30 seconds for better reliability
-        signal: AbortSignal.timeout(30000)
-      }).catch(error => {
-        console.error('Supabase fetch error:', error);
-        throw error;
-      });
     }
   }
 });
@@ -57,27 +46,46 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // Test connection function with improved error handling
 export const testSupabaseConnection = async () => {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // Increased to 20 second timeout
-
+    console.log('Testing Supabase connection...');
+    
+    // Simple health check - try to get the current timestamp from the database
     const { data, error } = await supabase
       .from('elections')
       .select('count')
-      .limit(1)
-      .abortSignal(controller.signal);
-    
-    clearTimeout(timeoutId);
+      .limit(1);
     
     if (error) {
       console.error('Supabase connection test failed:', error);
-      return false;
+      
+      // Check if it's a network error
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        throw new Error('Network connection failed. Please check your internet connection and Supabase URL.');
+      }
+      
+      // Check if it's an authentication error
+      if (error.message.includes('Invalid API key') || error.message.includes('unauthorized')) {
+        throw new Error('Invalid Supabase credentials. Please check your VITE_SUPABASE_ANON_KEY.');
+      }
+      
+      throw new Error(`Database connection failed: ${error.message}`);
     }
     
     console.log('Supabase connection test successful');
     return true;
   } catch (error) {
     console.error('Supabase connection test error:', error);
-    return false;
+    
+    // Handle network errors specifically
+    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+      throw new Error('Unable to reach Supabase server. Please check your VITE_SUPABASE_URL and internet connection.');
+    }
+    
+    // Re-throw custom errors
+    if (error instanceof Error) {
+      throw error;
+    }
+    
+    throw new Error('Unknown connection error occurred.');
   }
 };
 
