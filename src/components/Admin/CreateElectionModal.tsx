@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import Input from '../UI/Input';
 import Button from '../UI/Button';
 import Card from '../UI/Card';
+import ImageUpload from '../UI/ImageUpload';
 
 interface Candidate {
   id?: string;
@@ -371,6 +372,16 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({
                       )}
                     </div>
 
+                    {/* Candidate Photo Upload */}
+                    <div className="mb-6">
+                      <ImageUpload
+                        label="Candidate Photo"
+                        value={candidate.image_url}
+                        onChange={(url) => updateCandidate(index, 'image_url', url)}
+                        className="max-w-xs"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <Input
                         label="Full Name"
@@ -417,16 +428,6 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({
                       />
 
                       <Input
-                        label="Profile Image URL (Optional)"
-                        icon={Image}
-                        value={candidate.image_url}
-                        onChange={(e) => updateCandidate(index, 'image_url', e.target.value)}
-                        placeholder="https://example.com/photo.jpg"
-                      />
-                    </div>
-
-                    <div className="mb-4">
-                      <Input
                         label="Campaign Video URL (Optional)"
                         icon={Video}
                         value={candidate.video_url}
@@ -456,7 +457,7 @@ const CreateElectionModal: React.FC<CreateElectionModalProps> = ({
                 <h4 className="font-medium text-green-900 mb-2">✅ Candidate Setup Tips</h4>
                 <ul className="text-green-800 text-sm space-y-1">
                   <li>• Ensure all required fields are filled for each candidate</li>
-                  <li>• Profile images should be professional headshots (optional)</li>
+                  <li>• Profile photos help voters connect with candidates</li>
                   <li>• Campaign videos help voters connect with candidates (optional)</li>
                   <li>• Manifestos should be clear and specific about goals</li>
                   {existingElectionId && <li>• New candidates can be added even during active elections</li>}

@@ -48,6 +48,7 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
   electionStatus = 'upcoming'
 }) => {
   const [showFullManifesto, setShowFullManifesto] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const handleCardClick = () => {
     if (canVote && onSelect && !isVoting) {
@@ -103,21 +104,18 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
         <div className="flex items-center space-x-3">
           {/* Profile Image */}
           <div className="relative">
-            {candidate.image_url ? (
+            {candidate.image_url && !imageError ? (
               <img
                 src={candidate.image_url}
                 alt={candidate.full_name}
                 className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-lg"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  target.nextElementSibling?.classList.remove('hidden');
-                }}
+                onError={() => setImageError(true)}
               />
-            ) : null}
-            <div className={`w-16 h-16 bg-gradient-to-r ${getRankColor(rank || 0)} rounded-full flex items-center justify-center ${candidate.image_url ? 'hidden' : ''}`}>
-              <User className="h-8 w-8 text-white" />
-            </div>
+            ) : (
+              <div className={`w-16 h-16 bg-gradient-to-r ${getRankColor(rank || 0)} rounded-full flex items-center justify-center`}>
+                <User className="h-8 w-8 text-white" />
+              </div>
+            )}
             
             {/* Selection indicator */}
             {isSelected && (

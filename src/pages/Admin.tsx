@@ -12,6 +12,7 @@ import Button from '../components/UI/Button';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import CreateElectionModal from '../components/Admin/CreateElectionModal';
 import ElectionAnalytics from '../components/Admin/ElectionAnalytics';
+import CandidateManagement from '../components/Admin/CandidateManagement';
 
 interface Election {
   id: string;
@@ -43,7 +44,7 @@ interface DashboardStats {
 }
 
 const Admin: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'elections' | 'students' | 'analytics' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'elections' | 'candidates' | 'students' | 'analytics' | 'settings'>('dashboard');
   const [elections, setElections] = useState<Election[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
@@ -160,7 +161,8 @@ const Admin: React.FC = () => {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'elections', label: 'Elections', icon: Vote },
-    { id: 'students', label: 'Students', icon: Users },
+    { id: 'candidates', label: 'Candidates', icon: Users },
+    { id: 'students', label: 'Students', icon: UserCheck },
     { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -191,27 +193,27 @@ const Admin: React.FC = () => {
             Admin Panel
           </h1>
           <p className="text-xl text-gray-600">
-            Manage elections, students, and system settings
+            Manage elections, candidates, students, and system settings
           </p>
         </div>
 
         {/* Navigation Tabs */}
         <div className="mb-8">
-          <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl">
+          <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+                  className={`flex-shrink-0 flex items-center justify-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
                     activeTab === tab.id
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
                   <Icon className="h-5 w-5" />
-                  <span>{tab.label}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
                 </button>
               );
             })}
@@ -293,16 +295,16 @@ const Admin: React.FC = () => {
               <Card className="backdrop-blur-sm bg-white/80 border-white/20">
                 <div className="text-center">
                   <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Download className="h-8 w-8 text-green-600" />
+                    <Users className="h-8 w-8 text-green-600" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Export Data</h3>
-                  <p className="text-gray-600 mb-4">Download student data and election results for analysis</p>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Manage Candidates</h3>
+                  <p className="text-gray-600 mb-4">View and edit candidate profiles across all elections</p>
                   <Button 
-                    onClick={handleExportStudents}
+                    onClick={() => setActiveTab('candidates')}
                     variant="outline"
                     className="w-full"
                   >
-                    Export Students
+                    View Candidates
                   </Button>
                 </div>
               </Card>
@@ -454,6 +456,9 @@ const Admin: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Candidates Tab */}
+        {activeTab === 'candidates' && <CandidateManagement />}
 
         {/* Students Tab */}
         {activeTab === 'students' && (
