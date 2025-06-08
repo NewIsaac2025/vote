@@ -405,9 +405,21 @@ const Home: React.FC = () => {
                             </div>
                           </div>
 
-                          {electionResults.length > 0 && (
+                          {/* Only show leading candidate if election has ended */}
+                          {electionResults.length > 0 && status === 'ended' && (
                             <div className="mb-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Leading Candidate:</h4>
+                              <h4 className="text-sm font-medium text-gray-700 mb-2">Winner:</h4>
+                              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-3 rounded-md border border-yellow-200">
+                                <p className="font-medium text-yellow-900">{electionResults[0]?.candidate_name}</p>
+                                <p className="text-sm text-yellow-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Show current leader for active elections */}
+                          {electionResults.length > 0 && status === 'active' && (
+                            <div className="mb-4">
+                              <h4 className="text-sm font-medium text-gray-700 mb-2">Currently Leading:</h4>
                               <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded-md">
                                 <p className="font-medium text-blue-900">{electionResults[0]?.candidate_name}</p>
                                 <p className="text-sm text-blue-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>

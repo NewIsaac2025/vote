@@ -6,7 +6,7 @@ import {
   Trophy, Medal, Target, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { formatDate, exportToCSV } from '../lib/utils';
+import { formatDate, exportToCSV, getElectionStatus } from '../lib/utils';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
@@ -63,6 +63,18 @@ const Results: React.FC = () => {
   );
   
   const winner = useMemo(() => results[0], [results]);
+
+  // Check if election has ended
+  const electionStatus = useMemo(() => 
+    selectedElection ? getElectionStatus(selectedElection.start_date, selectedElection.end_date) : 'upcoming',
+    [selectedElection]
+  );
+
+  // Only show winner if election has ended and there are votes
+  const shouldShowWinner = useMemo(() => 
+    electionStatus === 'ended' && winner && totalVotes > 0,
+    [electionStatus, winner, totalVotes]
+  );
 
   const fetchElections = useCallback(async () => {
     try {
@@ -288,6 +300,17 @@ const Results: React.FC = () => {
                 >
                   <h4 className="font-medium text-gray-900 mb-1">{election.title}</h4>
                   <p className="text-sm text-gray-600">{formatDate(election.start_date)}</p>
+                  <div className="mt-2">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      getElectionStatus(election.start_date, election.end_date) === 'active' 
+                        ? 'bg-green-100 text-green-800'
+                        : getElectionStatus(election.start_date, election.end_date) === 'upcoming'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {getElectionStatus(election.start_date, election.end_date)}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -309,11 +332,24 @@ const Results: React.FC = () => {
                     </div>
                     <div className="flex items-center space-x-2">
                       <Clock className="h-4 w-4" />
-                      <span>Ended: {formatDate(selectedElection.end_date)}</span>
+                      <span>
+                        {electionStatus === 'ended' ? 'Ended' : 'Ends'}: {formatDate(selectedElection.end_date)}
+                      </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Users className="h-4 w-4" />
                       <span>{totalVotes.toLocaleString()} total votes</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        electionStatus === 'active' 
+                          ? 'bg-green-500 text-white'
+                          : electionStatus === 'upcoming'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-500 text-white'
+                      }`}>
+                        {electionStatus}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -347,8 +383,8 @@ const Results: React.FC = () => {
               </div>
             )}
 
-            {/* Winner Announcement */}
-            {winner && totalVotes > 0 && !loadingResults && (
+            {/* Winner Announcement - Only show if election has ended */}
+            {shouldShowWinner && !loadingResults && (
               <Card className="mb-8 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200 backdrop-blur-sm">
                 <div className="text-center">
                   <div className="relative inline-block mb-4">
@@ -376,6 +412,31 @@ const Results: React.FC = () => {
               </Card>
             )}
 
+            {/* Election Status Notice for Active/Upcoming Elections */}
+            {electionStatus !== 'ended' && totalVotes > 0 && !loadingResults && (
+              <Card className="mb-8 bg-blue-50 border-blue-200 backdrop-blur-sm">
+                <div className="text-center">
+                  <div className="flex items-center justify-center space-x-2 text-blue-800 mb-2">
+                    <Clock className="h-5 w-5" />
+                    <h3 className="text-lg font-semibold">
+                      {electionStatus === 'active' ? 'Voting in Progress' : 'Voting Not Started'}
+                    </h3>
+                  </div>
+                  <p className="text-blue-700">
+                    {electionStatus === 'active' 
+                      ? 'Results are being updated in real-time. The winner will be announced when voting ends.'
+                      : 'Voting has not started yet. Results will be available once voting begins.'
+                    }
+                  </p>
+                  {electionStatus === 'active' && (
+                    <p className="text-sm text-blue-600 mt-2">
+                      Voting ends: {formatDate(selectedElection.end_date)}
+                    </p>
+                  )}
+                </div>
+              </Card>
+            )}
+
             {/* Results */}
             {!loadingResults && (
               <>
@@ -383,7 +444,7 @@ const Results: React.FC = () => {
                   <div className="space-y-6">
                     {results.map((result, index) => {
                       const candidate = candidates.find(c => c.id === result.candidate_id);
-                      const isWinner = index === 0 && totalVotes > 0;
+                      const isWinner = index === 0 && shouldShowWinner;
 
                       return (
                         <Card 
@@ -393,16 +454,16 @@ const Results: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center space-x-4">
-                            {/* Rank */}
+                            {/* Rank - Only show final ranks if election has ended */}
                             <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
-                              index === 0 ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
-                              index === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400 text-white' :
-                              index === 2 ? 'bg-gradient-to-r from-orange-300 to-orange-400 text-white' :
+                              electionStatus === 'ended' && index === 0 ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
+                              electionStatus === 'ended' && index === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400 text-white' :
+                              electionStatus === 'ended' && index === 2 ? 'bg-gradient-to-r from-orange-300 to-orange-400 text-white' :
                               'bg-gray-100 text-gray-600'
                             }`}>
-                              {index === 0 ? <Trophy className="h-6 w-6" /> :
-                               index === 1 ? <Medal className="h-6 w-6" /> :
-                               index === 2 ? <Target className="h-6 w-6" /> :
+                              {electionStatus === 'ended' && index === 0 ? <Trophy className="h-6 w-6" /> :
+                               electionStatus === 'ended' && index === 1 ? <Medal className="h-6 w-6" /> :
+                               electionStatus === 'ended' && index === 2 ? <Target className="h-6 w-6" /> :
                                index + 1}
                             </div>
 
@@ -497,7 +558,9 @@ const Results: React.FC = () => {
                     <p className="text-2xl font-bold text-gray-900">
                       {winner ? winner.vote_percentage.toFixed(1) : 0}%
                     </p>
-                    <p className="text-sm text-gray-600">Winning Margin</p>
+                    <p className="text-sm text-gray-600">
+                      {electionStatus === 'ended' ? 'Winning Margin' : 'Leading Margin'}
+                    </p>
                   </div>
                   <div className="text-center">
                     <div className="bg-orange-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2">
