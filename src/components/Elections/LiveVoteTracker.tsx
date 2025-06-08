@@ -56,18 +56,30 @@ const LiveVoteTracker: React.FC<LiveVoteTrackerProps> = ({ electionId, isActive 
   const fetchStats = async () => {
     try {
       const { data, error } = await supabase
-        .rpc('get_election_stats', { election_uuid: electionId });
+        .rpc('get_election_results', { election_uuid: electionId });
 
       if (error) throw error;
 
       if (data && data.length > 0) {
-        const statsData = data[0];
+        // Calculate stats from election results
+        const totalVotes = data.reduce((sum: number, candidate: any) => sum + (candidate.vote_count || 0), 0);
+        const leadingCandidate = data[0]; // Results should be ordered by vote count
+        
         setStats({
-          totalVotes: statsData.total_votes || 0,
-          leadingCandidate: statsData.leading_candidate_name || 'No votes yet',
-          leadingVotes: statsData.leading_candidate_votes || 0,
-          leadingPercentage: statsData.leading_candidate_percentage || 0,
-          voterTurnout: statsData.voter_turnout_percentage || 0
+          totalVotes,
+          leadingCandidate: leadingCandidate?.candidate_name || 'No votes yet',
+          leadingVotes: leadingCandidate?.vote_count || 0,
+          leadingPercentage: totalVotes > 0 ? ((leadingCandidate?.vote_count || 0) / totalVotes) * 100 : 0,
+          voterTurnout: 0 // Cannot calculate without total student count, set to 0
+        });
+      } else {
+        // No results yet
+        setStats({
+          totalVotes: 0,
+          leadingCandidate: 'No votes yet',
+          leadingVotes: 0,
+          leadingPercentage: 0,
+          voterTurnout: 0
         });
       }
       
@@ -154,7 +166,7 @@ const LiveVoteTracker: React.FC<LiveVoteTrackerProps> = ({ electionId, isActive 
           <div className="bg-orange-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
             <Zap className="h-5 w-5 text-orange-600" />
           </div>
-          <p className="text-2xl font-bold text-orange-900">{stats.voterTurnout.toFixed(1)}%</p>
+          <p className="text-2xl font-bold text-orange-900">-</p>
           <p className="text-sm text-orange-700">Turnout</p>
         </div>
       </div>
@@ -171,19 +183,6 @@ const LiveVoteTracker: React.FC<LiveVoteTrackerProps> = ({ electionId, isActive 
               <div 
                 className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-1000"
                 style={{ width: `${Math.min(stats.leadingPercentage, 100)}%` }}
-              ></div>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-600">Voter turnout</span>
-              <span className="font-medium">{stats.voterTurnout.toFixed(1)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-1000"
-                style={{ width: `${Math.min(stats.voterTurnout, 100)}%` }}
               ></div>
             </div>
           </div>
