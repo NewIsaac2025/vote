@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Mail, GraduationCap, FileText, Play, ExternalLink, Award, CheckCircle, TrendingUp } from 'lucide-react';
+import { User, Mail, GraduationCap, FileText, Play, ExternalLink, Award, CheckCircle, TrendingUp, Vote } from 'lucide-react';
 import Card from '../UI/Card';
 import Button from '../UI/Button';
 
@@ -27,7 +27,10 @@ interface CandidateCardProps {
   canVote?: boolean;
   showResults?: boolean;
   rank?: number;
+  isActiveElection?: boolean;
   onSelect?: (candidateId: string) => void;
+  onVote?: (candidateId: string) => void;
+  isVoting?: boolean;
 }
 
 const CandidateCard: React.FC<CandidateCardProps> = ({
@@ -37,13 +40,23 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
   canVote = false,
   showResults = false,
   rank,
-  onSelect
+  isActiveElection = false,
+  onSelect,
+  onVote,
+  isVoting = false
 }) => {
   const [showFullManifesto, setShowFullManifesto] = useState(false);
 
   const handleCardClick = () => {
-    if (canVote && onSelect) {
+    if (canVote && onSelect && !isVoting) {
       onSelect(candidate.id);
+    }
+  };
+
+  const handleVoteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onVote && !isVoting) {
+      onVote(candidate.id);
     }
   };
 
@@ -227,8 +240,24 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
         )}
       </div>
 
-      {/* Selection Indicator */}
-      {canVote && (
+      {/* Cast Vote Button - Only show on active elections */}
+      {isActiveElection && canVote && (
+        <div className="pt-4 border-t border-gray-200">
+          <Button
+            onClick={handleVoteClick}
+            disabled={isVoting}
+            loading={isVoting}
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 transform hover:scale-[1.02] transition-all duration-200"
+            size="lg"
+          >
+            <Vote className="h-5 w-5 mr-2" />
+            {isVoting ? 'Casting Vote...' : 'Cast Your Vote'}
+          </Button>
+        </div>
+      )}
+
+      {/* Selection Indicator for non-active elections */}
+      {!isActiveElection && canVote && (
         <div className="pt-4 border-t border-gray-200">
           <div className={`text-center text-sm font-medium transition-colors ${
             isSelected ? 'text-blue-600' : 'text-gray-400'

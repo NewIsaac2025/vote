@@ -127,7 +127,7 @@ const ElectionDetails: React.FC = () => {
     }
   };
 
-  const handleCandidateSelect = async (candidateId: string) => {
+  const handleCandidateVote = async (candidateId: string) => {
     // Prevent multiple simultaneous voting attempts
     if (!student || !election || hasVoted || voting) {
       return;
@@ -267,6 +267,12 @@ const ElectionDetails: React.FC = () => {
     }
   };
 
+  const handleCandidateSelect = (candidateId: string) => {
+    if (!hasVoted && !voting) {
+      setSelectedCandidate(candidateId);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -297,6 +303,7 @@ const ElectionDetails: React.FC = () => {
   const status = getElectionStatus(election.start_date, election.end_date);
   const totalVotes = results.reduce((sum, result) => sum + result.vote_count, 0);
   const canVote = status === 'active' && user && student?.verified && !hasVoted && !voting;
+  const isActiveElection = status === 'active';
 
   return (
     <div className="min-h-screen py-12">
@@ -392,7 +399,7 @@ const ElectionDetails: React.FC = () => {
                   <Vote className="h-6 w-6 text-blue-600" />
                   <div>
                     <p className="font-medium text-gray-900">Ready to Vote</p>
-                    <p className="text-sm text-gray-600">Click on a candidate below to cast your vote instantly</p>
+                    <p className="text-sm text-gray-600">Click "Cast Your Vote" on any candidate below to vote instantly</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2 text-green-600">
@@ -448,14 +455,14 @@ const ElectionDetails: React.FC = () => {
           </Card>
         )}
 
-        {/* Voting Instructions */}
-        {canVote && !hasVoted && (
+        {/* Voting Instructions for Active Elections */}
+        {isActiveElection && canVote && !hasVoted && (
           <Card className="mb-8 bg-blue-50 border-blue-200">
             <div className="flex items-center space-x-3 text-blue-800">
               <Vote className="h-5 w-5" />
               <div>
                 <p className="font-medium">How to Vote</p>
-                <p className="text-sm">Simply click on your preferred candidate below. You'll be asked to confirm your choice before the vote is recorded on the blockchain.</p>
+                <p className="text-sm">Click the "Cast Your Vote" button on your preferred candidate. You'll be asked to confirm your choice before the vote is recorded on the blockchain.</p>
               </div>
             </div>
           </Card>
@@ -480,7 +487,10 @@ const ElectionDetails: React.FC = () => {
                 canVote={canVote}
                 showResults={status !== 'upcoming'}
                 rank={candidateResult ? rank : undefined}
+                isActiveElection={isActiveElection}
                 onSelect={handleCandidateSelect}
+                onVote={handleCandidateVote}
+                isVoting={voting}
               />
             );
           })}
