@@ -53,9 +53,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       'x-client-info': 'univote-web'
     },
     fetch: (url, options = {}) => {
-      // Add timeout to all fetch requests
+      // Add timeout to all fetch requests - increased from 10 seconds to 20 seconds
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
       
       return fetch(url, {
         ...options,
@@ -77,9 +77,9 @@ export const testSupabaseConnection = async (): Promise<boolean> => {
       console.log('Testing Supabase connection...');
     }
     
-    // Create a promise that will timeout after 8 seconds (reduced from 5 for better reliability)
+    // Create a promise that will timeout after 16 seconds (increased from 8 seconds)
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout - unable to reach Supabase server')), 8000);
+      setTimeout(() => reject(new Error('Connection timeout - unable to reach Supabase server')), 16000);
     });
     
     // Simple health check - try to get a count from elections table with minimal data
