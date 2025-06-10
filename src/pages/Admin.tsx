@@ -3,7 +3,7 @@ import {
   Plus, Users, Vote, BarChart3, Settings, 
   Calendar, Clock, Edit3, Trash2, Eye,
   UserCheck, AlertCircle, TrendingUp, Download,
-  Activity, Award, Target, UserPlus
+  Activity, Award, Target, UserPlus, Shield
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatDate, getElectionStatus, exportToCSV } from '../lib/utils';
@@ -13,6 +13,7 @@ import LoadingSpinner from '../components/UI/LoadingSpinner';
 import CreateElectionModal from '../components/Admin/CreateElectionModal';
 import ElectionAnalytics from '../components/Admin/ElectionAnalytics';
 import CandidateManagement from '../components/Admin/CandidateManagement';
+import UserManagement from '../components/Admin/UserManagement';
 
 interface Election {
   id: string;
@@ -44,7 +45,7 @@ interface DashboardStats {
 }
 
 const Admin: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'elections' | 'candidates' | 'students' | 'analytics' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'elections' | 'candidates' | 'users' | 'analytics' | 'settings'>('dashboard');
   const [elections, setElections] = useState<Election[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
@@ -162,7 +163,7 @@ const Admin: React.FC = () => {
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'elections', label: 'Elections', icon: Vote },
     { id: 'candidates', label: 'Candidates', icon: Users },
-    { id: 'students', label: 'Students', icon: UserCheck },
+    { id: 'users', label: 'User Management', icon: Shield }, // Updated icon and label
     { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -193,7 +194,7 @@ const Admin: React.FC = () => {
             Admin Panel
           </h1>
           <p className="text-xl text-gray-600">
-            Manage elections, candidates, students, and system settings
+            Manage elections, candidates, users, and system settings
           </p>
         </div>
 
@@ -275,7 +276,7 @@ const Admin: React.FC = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <Card className="backdrop-blur-sm bg-white/80 border-white/20">
                 <div className="text-center">
                   <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -312,7 +313,24 @@ const Admin: React.FC = () => {
               <Card className="backdrop-blur-sm bg-white/80 border-white/20">
                 <div className="text-center">
                   <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Activity className="h-8 w-8 text-purple-600" />
+                    <Shield className="h-8 w-8 text-purple-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">User Management</h3>
+                  <p className="text-gray-600 mb-4">Manage user accounts and voting privileges</p>
+                  <Button 
+                    onClick={() => setActiveTab('users')}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    Manage Users
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+                <div className="text-center">
+                  <div className="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Activity className="h-8 w-8 text-orange-600" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">View Analytics</h3>
                   <p className="text-gray-600 mb-4">Analyze voting patterns and election performance</p>
@@ -460,67 +478,8 @@ const Admin: React.FC = () => {
         {/* Candidates Tab */}
         {activeTab === 'candidates' && <CandidateManagement />}
 
-        {/* Students Tab */}
-        {activeTab === 'students' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Students Management</h2>
-              <Button variant="outline" onClick={handleExportStudents}>
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
-              </Button>
-            </div>
-
-            <Card className="backdrop-blur-sm bg-white/80 border-white/20">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Name</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Email</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Student ID</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Wallet</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Registered</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.slice(0, 20).map((student) => (
-                      <tr key={student.id} className="border-b border-gray-100">
-                        <td className="py-3 px-4 text-gray-900">{student.full_name}</td>
-                        <td className="py-3 px-4 text-gray-600">{student.email}</td>
-                        <td className="py-3 px-4 text-gray-600">{student.student_id}</td>
-                        <td className="py-3 px-4">
-                          {student.verified ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              <UserCheck className="h-3 w-3 mr-1" />
-                              Verified
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              Pending
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          {student.wallet_address ? (
-                            <span className="text-green-600 text-sm">Connected</span>
-                          ) : (
-                            <span className="text-gray-400 text-sm">Not connected</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-gray-600 text-sm">
-                          {new Date(student.created_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
-        )}
+        {/* User Management Tab */}
+        {activeTab === 'users' && <UserManagement />}
 
         {/* Analytics Tab */}
         {activeTab === 'analytics' && <ElectionAnalytics />}
