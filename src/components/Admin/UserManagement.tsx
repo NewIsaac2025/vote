@@ -3,10 +3,10 @@ import {
   Users, Search, Filter, UserCheck, UserX, Shield, ShieldOff,
   Calendar, Mail, Phone, Car as IdCard, Wallet, ToggleLeft, ToggleRight,
   AlertCircle, CheckCircle, RefreshCw, Download, Eye, EyeOff,
-  Clock, Award, TrendingUp, Activity
+  Clock, Award, TrendingUp, Activity, ExternalLink
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { formatDate, exportToCSV } from '../../lib/utils';
+import { formatDate, exportToCSV, truncateAddress } from '../../lib/utils';
 import Card from '../UI/Card';
 import Button from '../UI/Button';
 import Input from '../UI/Input';
@@ -22,7 +22,7 @@ interface Student {
   verified: boolean;
   created_at: string;
   updated_at: string;
-  voting_enabled?: boolean; // We'll add this field
+  voting_enabled?: boolean;
   votes_cast?: number;
 }
 
@@ -47,7 +47,7 @@ const UserManagement: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [showConfirmDialog, setShowConfirmDialog] = useState<{
     userId: string;
-    action: 'enable' | 'disable';
+    action: 'enable' | 'disable' | 'verify' | 'unverify';
     userName: string;
   } | null>(null);
 
@@ -57,7 +57,7 @@ const UserManagement: React.FC = () => {
     const verifiedUsers = users.filter(u => u.verified).length;
     const unverifiedUsers = totalUsers - verifiedUsers;
     const usersWithWallets = users.filter(u => u.wallet_address).length;
-    const votingEnabledUsers = users.filter(u => u.voting_enabled !== false).length; // Default to enabled
+    const votingEnabledUsers = users.filter(u => u.voting_enabled !== false).length;
     const totalVotesCast = users.reduce((sum, u) => sum + (u.votes_cast || 0), 0);
 
     return {
@@ -136,7 +136,9 @@ const UserManagement: React.FC = () => {
     try {
       setError('');
       
-      // Fetch users with vote counts
+      console.log('Fetching all users from database...');
+      
+      // Fetch ALL users from the students table
       const { data: usersData, error: usersError } = await supabase
         .from('students')
         .select(`
@@ -147,14 +149,20 @@ const UserManagement: React.FC = () => {
           student_id,
           wallet_address,
           verified,
+          voting_enabled,
           created_at,
           updated_at
         `)
         .order('created_at', { ascending: false });
 
-      if (usersError) throw usersError;
+      if (usersError) {
+        console.error('Error fetching users:', usersError);
+        throw usersError;
+      }
 
-      // Fetch vote counts for each user
+      console.log(`Found ${usersData?.length || 0} users in database`);
+
+      // Fetch vote counts for each user in parallel for better performance
       const usersWithVoteCounts = await Promise.all(
         (usersData || []).map(async (user) => {
           try {
@@ -166,19 +174,20 @@ const UserManagement: React.FC = () => {
             return {
               ...user,
               votes_cast: voteCount || 0,
-              voting_enabled: true // Default to enabled, you can add this field to the database later
+              voting_enabled: user.voting_enabled !== false // Default to enabled if null
             };
           } catch (error) {
             console.warn(`Failed to fetch vote count for user ${user.id}:`, error);
             return {
               ...user,
               votes_cast: 0,
-              voting_enabled: true
+              voting_enabled: user.voting_enabled !== false
             };
           }
         })
       );
 
+      console.log('Users with vote counts:', usersWithVoteCounts);
       setUsers(usersWithVoteCounts);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -194,11 +203,17 @@ const UserManagement: React.FC = () => {
     setSuccess('');
 
     try {
-      // For now, we'll just update the local state since voting_enabled isn't in the database yet
-      // In a real implementation, you'd update the database
+      console.log(`${enable ? 'Enabling' : 'Disabling'} voting privileges for user ${userId}`);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await supabase
+        .from('students')
+        .update({ 
+          voting_enabled: enable,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (error) throw error;
 
       // Update local state
       setUsers(prev => prev.map(user => 
@@ -222,22 +237,69 @@ const UserManagement: React.FC = () => {
     }
   }, [users]);
 
-  const handleToggleClick = useCallback((user: Student, enable: boolean) => {
+  const toggleVerificationStatus = useCallback(async (userId: string, verify: boolean) => {
+    setUpdating(userId);
+    setError('');
+    setSuccess('');
+
+    try {
+      console.log(`${verify ? 'Verifying' : 'Unverifying'} user ${userId}`);
+      
+      const { error } = await supabase
+        .from('students')
+        .update({ 
+          verified: verify,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(prev => prev.map(user => 
+        user.id === userId 
+          ? { ...user, verified: verify }
+          : user
+      ));
+
+      const user = users.find(u => u.id === userId);
+      setSuccess(`User ${user?.full_name} ${verify ? 'verified' : 'unverified'} successfully`);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccess(''), 3000);
+
+    } catch (error) {
+      console.error('Error updating verification status:', error);
+      setError('Failed to update verification status. Please try again.');
+    } finally {
+      setUpdating(null);
+      setShowConfirmDialog(null);
+    }
+  }, [users]);
+
+  const handleToggleClick = useCallback((user: Student, action: 'enable' | 'disable' | 'verify' | 'unverify') => {
     setShowConfirmDialog({
       userId: user.id,
-      action: enable ? 'enable' : 'disable',
+      action,
       userName: user.full_name
     });
   }, []);
 
   const handleConfirmToggle = useCallback(() => {
     if (showConfirmDialog) {
-      toggleVotingPrivileges(
-        showConfirmDialog.userId, 
-        showConfirmDialog.action === 'enable'
-      );
+      if (showConfirmDialog.action === 'enable' || showConfirmDialog.action === 'disable') {
+        toggleVotingPrivileges(
+          showConfirmDialog.userId, 
+          showConfirmDialog.action === 'enable'
+        );
+      } else if (showConfirmDialog.action === 'verify' || showConfirmDialog.action === 'unverify') {
+        toggleVerificationStatus(
+          showConfirmDialog.userId,
+          showConfirmDialog.action === 'verify'
+        );
+      }
     }
-  }, [showConfirmDialog, toggleVotingPrivileges]);
+  }, [showConfirmDialog, toggleVotingPrivileges, toggleVerificationStatus]);
 
   const handleExportUsers = useCallback(() => {
     const exportData = filteredAndSortedUsers.map(user => ({
@@ -247,6 +309,7 @@ const UserManagement: React.FC = () => {
       phone: user.phone,
       verified: user.verified ? 'Yes' : 'No',
       wallet_connected: user.wallet_address ? 'Yes' : 'No',
+      wallet_address: user.wallet_address || 'Not Connected',
       voting_enabled: user.voting_enabled ? 'Yes' : 'No',
       votes_cast: user.votes_cast || 0,
       registration_date: formatDate(user.created_at)
@@ -275,7 +338,8 @@ const UserManagement: React.FC = () => {
           schema: 'public',
           table: 'students'
         },
-        () => {
+        (payload) => {
+          console.log('Real-time update received:', payload);
           // Refresh users when changes occur
           fetchUsers();
         }
@@ -302,7 +366,7 @@ const UserManagement: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-          <p className="text-gray-600">Manage user accounts and voting privileges</p>
+          <p className="text-gray-600">Manage user accounts, verification status, and voting privileges</p>
         </div>
         <div className="flex items-center space-x-3">
           <Button variant="outline" onClick={refreshUsers} disabled={loading}>
@@ -442,6 +506,9 @@ const UserManagement: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900">
               Unverified Accounts ({unverifiedUsers.length})
             </h3>
+            <span className="text-sm text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+              Require Admin Action
+            </span>
           </div>
           
           <div className="grid grid-cols-1 gap-4">
@@ -451,6 +518,7 @@ const UserManagement: React.FC = () => {
                 user={user}
                 updating={updating === user.id}
                 onToggleVoting={handleToggleClick}
+                onToggleVerification={handleToggleClick}
               />
             ))}
           </div>
@@ -465,6 +533,9 @@ const UserManagement: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900">
               Verified Accounts ({verifiedUsers.length})
             </h3>
+            <span className="text-sm text-green-600 bg-green-100 px-2 py-1 rounded-full">
+              Can Vote
+            </span>
           </div>
           
           <div className="grid grid-cols-1 gap-4">
@@ -474,6 +545,7 @@ const UserManagement: React.FC = () => {
                 user={user}
                 updating={updating === user.id}
                 onToggleVoting={handleToggleClick}
+                onToggleVerification={handleToggleClick}
               />
             ))}
           </div>
@@ -500,24 +572,36 @@ const UserManagement: React.FC = () => {
           <Card className="w-full max-w-md">
             <div className="text-center">
               <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                showConfirmDialog.action === 'enable' 
+                showConfirmDialog.action === 'enable' || showConfirmDialog.action === 'verify'
                   ? 'bg-green-100' 
                   : 'bg-red-100'
               }`}>
                 {showConfirmDialog.action === 'enable' ? (
                   <Shield className="h-8 w-8 text-green-600" />
-                ) : (
+                ) : showConfirmDialog.action === 'disable' ? (
                   <ShieldOff className="h-8 w-8 text-red-600" />
+                ) : showConfirmDialog.action === 'verify' ? (
+                  <UserCheck className="h-8 w-8 text-green-600" />
+                ) : (
+                  <UserX className="h-8 w-8 text-red-600" />
                 )}
               </div>
               
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {showConfirmDialog.action === 'enable' ? 'Enable' : 'Disable'} Voting Privileges
+                {showConfirmDialog.action === 'enable' ? 'Enable Voting Privileges' :
+                 showConfirmDialog.action === 'disable' ? 'Disable Voting Privileges' :
+                 showConfirmDialog.action === 'verify' ? 'Verify User Account' :
+                 'Unverify User Account'}
               </h3>
               
               <p className="text-gray-600 mb-6">
-                Are you sure you want to {showConfirmDialog.action} voting privileges for{' '}
+                Are you sure you want to {showConfirmDialog.action} {' '}
                 <span className="font-medium">{showConfirmDialog.userName}</span>?
+                {showConfirmDialog.action === 'verify' && (
+                  <span className="block text-sm text-green-600 mt-2">
+                    This will allow them to participate in voting.
+                  </span>
+                )}
               </p>
               
               <div className="flex space-x-3">
@@ -531,12 +615,15 @@ const UserManagement: React.FC = () => {
                 <Button
                   onClick={handleConfirmToggle}
                   className={`flex-1 ${
-                    showConfirmDialog.action === 'enable'
+                    showConfirmDialog.action === 'enable' || showConfirmDialog.action === 'verify'
                       ? 'bg-green-600 hover:bg-green-700'
                       : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {showConfirmDialog.action === 'enable' ? 'Enable' : 'Disable'}
+                  {showConfirmDialog.action === 'enable' ? 'Enable' :
+                   showConfirmDialog.action === 'disable' ? 'Disable' :
+                   showConfirmDialog.action === 'verify' ? 'Verify' :
+                   'Unverify'}
                 </Button>
               </div>
             </div>
@@ -551,11 +638,12 @@ const UserManagement: React.FC = () => {
 interface UserCardProps {
   user: Student;
   updating: boolean;
-  onToggleVoting: (user: Student, enable: boolean) => void;
+  onToggleVoting: (user: Student, action: 'enable' | 'disable') => void;
+  onToggleVerification: (user: Student, action: 'verify' | 'unverify') => void;
 }
 
-const UserCard: React.FC<UserCardProps> = ({ user, updating, onToggleVoting }) => {
-  const isVotingEnabled = user.voting_enabled !== false; // Default to enabled
+const UserCard: React.FC<UserCardProps> = ({ user, updating, onToggleVoting, onToggleVerification }) => {
+  const isVotingEnabled = user.voting_enabled !== false;
 
   return (
     <Card className="backdrop-blur-sm bg-white/80 border-white/20 hover:shadow-lg transition-shadow">
@@ -604,6 +692,14 @@ const UserCard: React.FC<UserCardProps> = ({ user, updating, onToggleVoting }) =
               </div>
             </div>
 
+            {/* Wallet Address */}
+            {user.wallet_address && (
+              <div className="flex items-center space-x-1 mt-1 text-sm text-purple-600">
+                <Wallet className="h-3 w-3" />
+                <span className="font-mono text-xs">{truncateAddress(user.wallet_address)}</span>
+              </div>
+            )}
+
             {/* Status Badges */}
             <div className="flex items-center space-x-2 mt-2">
               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -635,32 +731,49 @@ const UserCard: React.FC<UserCardProps> = ({ user, updating, onToggleVoting }) =
           </div>
         </div>
 
-        {/* Voting Toggle */}
-        <div className="flex items-center space-x-3">
-          <div className="text-right">
-            <p className="text-sm font-medium text-gray-900">Voting Privileges</p>
-            <p className={`text-xs ${isVotingEnabled ? 'text-green-600' : 'text-red-600'}`}>
-              {isVotingEnabled ? 'Enabled' : 'Disabled'}
-            </p>
+        {/* Action Controls */}
+        <div className="flex items-center space-x-4">
+          {/* Verification Toggle */}
+          <div className="text-center">
+            <p className="text-xs font-medium text-gray-900 mb-1">Verification</p>
+            <Button
+              size="sm"
+              variant={user.verified ? "outline" : "primary"}
+              onClick={() => onToggleVerification(user, user.verified ? 'unverify' : 'verify')}
+              disabled={updating}
+              className={user.verified ? 'text-amber-600 border-amber-300 hover:bg-amber-50' : 'bg-green-600 hover:bg-green-700'}
+            >
+              {user.verified ? 'Unverify' : 'Verify'}
+            </Button>
           </div>
-          
-          <button
-            onClick={() => onToggleVoting(user, !isVotingEnabled)}
-            disabled={updating}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              isVotingEnabled ? 'bg-green-600' : 'bg-gray-200'
-            } ${updating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                isVotingEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-          
-          {updating && (
-            <LoadingSpinner size="sm" />
-          )}
+
+          {/* Voting Toggle */}
+          <div className="flex items-center space-x-3">
+            <div className="text-right">
+              <p className="text-sm font-medium text-gray-900">Voting Privileges</p>
+              <p className={`text-xs ${isVotingEnabled ? 'text-green-600' : 'text-red-600'}`}>
+                {isVotingEnabled ? 'Enabled' : 'Disabled'}
+              </p>
+            </div>
+            
+            <button
+              onClick={() => onToggleVoting(user, isVotingEnabled ? 'disable' : 'enable')}
+              disabled={updating}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                isVotingEnabled ? 'bg-green-600' : 'bg-gray-200'
+              } ${updating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isVotingEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            
+            {updating && (
+              <LoadingSpinner size="sm" />
+            )}
+          </div>
         </div>
       </div>
     </Card>

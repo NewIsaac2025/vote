@@ -142,6 +142,7 @@ const ElectionDetails: React.FC = () => {
       return;
     }
 
+    // Check if user is verified
     if (!student.verified) {
       setError('Please verify your account to vote');
       return;
@@ -150,6 +151,12 @@ const ElectionDetails: React.FC = () => {
     // Check if wallet is connected
     if (!student.wallet_address) {
       setError('Please verify your wallet to vote');
+      return;
+    }
+
+    // Check if voting is enabled for this user
+    if (student.voting_enabled === false) {
+      setError('Your voting privileges have been disabled. Please contact an administrator.');
       return;
     }
 
@@ -316,9 +323,20 @@ const ElectionDetails: React.FC = () => {
 
   const status = getElectionStatus(election.start_date, election.end_date);
   const totalVotes = results.reduce((sum, result) => sum + result.vote_count, 0);
-  const canVote = status === 'active' && user && student?.verified && student?.wallet_address && !hasVoted && !voting;
+  
+  // Enhanced voting eligibility check
+  const canVote = status === 'active' && 
+                  user && 
+                  student?.verified && 
+                  student?.wallet_address && 
+                  student?.voting_enabled !== false && 
+                  !hasVoted && 
+                  !voting;
+  
   const isActiveElection = status === 'active';
-  const needsWalletVerification = user && student && !student.wallet_address;
+  const needsWalletVerification = user && student && student.verified && !student.wallet_address;
+  const needsAccountVerification = user && student && !student.verified;
+  const votingDisabled = user && student && student.voting_enabled === false;
 
   // Get candidate details for the modal
   const candidateForModal = candidateToVote ? candidates.find(c => c.id === candidateToVote) : null;
@@ -400,6 +418,24 @@ const ElectionDetails: React.FC = () => {
           </Card>
         )}
 
+        {/* Account Verification Alert */}
+        {needsAccountVerification && (
+          <Card className="mb-8 bg-amber-50 border-amber-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <AlertCircle className="h-6 w-6 text-amber-600" />
+                <div>
+                  <p className="font-medium text-amber-900">Account Verification Required</p>
+                  <p className="text-sm text-amber-700">Your account needs to be verified by an administrator to participate in voting</p>
+                </div>
+              </div>
+              <div className="text-amber-600 text-sm">
+                Contact admin for verification
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Wallet Verification Alert */}
         {needsWalletVerification && (
           <Card className="mb-8 bg-amber-50 border-amber-200">
@@ -416,6 +452,19 @@ const ElectionDetails: React.FC = () => {
                   Verify Wallet
                 </Button>
               </Link>
+            </div>
+          </Card>
+        )}
+
+        {/* Voting Disabled Alert */}
+        {votingDisabled && (
+          <Card className="mb-8 bg-red-50 border-red-200">
+            <div className="flex items-center space-x-3">
+              <Shield className="h-6 w-6 text-red-600" />
+              <div>
+                <p className="font-medium text-red-900">Voting Privileges Disabled</p>
+                <p className="text-sm text-red-700">Your voting privileges have been disabled by an administrator. Please contact support for assistance.</p>
+              </div>
             </div>
           </Card>
         )}
