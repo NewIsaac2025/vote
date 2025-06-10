@@ -51,6 +51,18 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'x-client-info': 'univote-web'
+    },
+    fetch: (url, options = {}) => {
+      // Add timeout to all fetch requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      return fetch(url, {
+        ...options,
+        signal: controller.signal
+      }).finally(() => {
+        clearTimeout(timeoutId);
+      });
     }
   },
   db: {
@@ -65,39 +77,59 @@ export const testSupabaseConnection = async (): Promise<boolean> => {
       console.log('Testing Supabase connection...');
     }
     
-    // Create a promise that will timeout after 5 seconds
+    // Create a promise that will timeout after 8 seconds (reduced from 5 for better reliability)
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), 5000);
+      setTimeout(() => reject(new Error('Connection timeout - unable to reach Supabase server')), 8000);
     });
     
-    // Simple health check - try to get a count from elections table
+    // Simple health check - try to get a count from elections table with minimal data
     const connectionPromise = supabase
       .from('elections')
       .select('id', { count: 'exact', head: true })
-      .limit(1);
+      .limit(1)
+      .single();
     
-    const { data, error } = await Promise.race([connectionPromise, timeoutPromise]);
-    
-    if (error) {
+    try {
+      const result = await Promise.race([connectionPromise, timeoutPromise]);
+      
+      if (import.meta.env.DEV) {
+        console.log('Supabase connection test successful');
+      }
+      return true;
+    } catch (error: any) {
+      // Handle the specific error from the query
+      if (error?.code === 'PGRST116') {
+        // This error means the query returned no results, but connection is working
+        if (import.meta.env.DEV) {
+          console.log('Supabase connection test successful (no data found, but connection works)');
+        }
+        return true;
+      }
+      
       console.error('Supabase connection test failed:', error);
       
       // Check if it's a network error
-      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+      if (error.message.includes('Failed to fetch') || 
+          error.message.includes('NetworkError') || 
+          error.message.includes('fetch')) {
         throw new Error('Network connection failed. Please check your internet connection and Supabase URL.');
       }
       
       // Check if it's an authentication error
-      if (error.message.includes('Invalid API key') || error.message.includes('unauthorized')) {
+      if (error.message.includes('Invalid API key') || 
+          error.message.includes('unauthorized') ||
+          error.message.includes('JWT')) {
         throw new Error('Invalid Supabase credentials. Please check your VITE_SUPABASE_ANON_KEY.');
+      }
+      
+      // Check if it's a timeout
+      if (error.message.includes('timeout') || error.name === 'AbortError') {
+        throw new Error('Connection timeout. Please check your internet connection and try again.');
       }
       
       throw new Error(`Database connection failed: ${error.message}`);
     }
     
-    if (import.meta.env.DEV) {
-      console.log('Supabase connection test successful');
-    }
-    return true;
   } catch (error) {
     console.error('Supabase connection test error:', error);
     
@@ -107,7 +139,7 @@ export const testSupabaseConnection = async (): Promise<boolean> => {
     }
     
     // Handle timeout errors
-    if (error instanceof Error && error.message.includes('timeout')) {
+    if (error instanceof Error && (error.message.includes('timeout') || error.name === 'AbortError')) {
       throw new Error('Connection timeout. Please check your internet connection and try again.');
     }
     
