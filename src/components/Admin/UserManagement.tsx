@@ -3,7 +3,7 @@ import {
   Users, Search, Filter, UserCheck, UserX, Shield, ShieldOff,
   Calendar, Mail, Phone, Car as IdCard, Wallet, ToggleLeft, ToggleRight,
   AlertCircle, CheckCircle, RefreshCw, Download, Eye, EyeOff,
-  Clock, Award, TrendingUp, Activity, ExternalLink
+  Clock, Award, TrendingUp, Activity, ExternalLink, Database
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { formatDate, exportToCSV, truncateAddress } from '../../lib/utils';
@@ -11,6 +11,7 @@ import Card from '../UI/Card';
 import Button from '../UI/Button';
 import Input from '../UI/Input';
 import LoadingSpinner from '../UI/LoadingSpinner';
+import UserVerification from './UserVerification';
 
 interface Student {
   id: string;
@@ -45,6 +46,7 @@ const UserManagement: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'management'>('overview');
   const [showConfirmDialog, setShowConfirmDialog] = useState<{
     userId: string;
     action: 'enable' | 'disable' | 'verify' | 'unverify';
@@ -380,190 +382,279 @@ const UserManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Success/Error Messages */}
-      {success && (
-        <Card className="bg-green-50 border-green-200">
-          <div className="flex items-center space-x-3 text-green-600">
-            <CheckCircle className="h-5 w-5" />
-            <p>{success}</p>
-          </div>
-        </Card>
-      )}
-
-      {error && (
-        <Card className="bg-red-50 border-red-200">
-          <div className="flex items-center space-x-3 text-red-600">
-            <AlertCircle className="h-5 w-5" />
-            <p>{error}</p>
-          </div>
-        </Card>
-      )}
-
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-        <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-          <div className="bg-blue-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
-            <Users className="h-5 w-5 text-blue-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{stats.totalUsers}</p>
-          <p className="text-xs text-gray-600">Total Users</p>
-        </Card>
-
-        <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-          <div className="bg-green-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
-            <UserCheck className="h-5 w-5 text-green-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{stats.verifiedUsers}</p>
-          <p className="text-xs text-gray-600">Verified</p>
-        </Card>
-
-        <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-          <div className="bg-amber-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
-            <UserX className="h-5 w-5 text-amber-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{stats.unverifiedUsers}</p>
-          <p className="text-xs text-gray-600">Unverified</p>
-        </Card>
-
-        <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-          <div className="bg-purple-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
-            <Wallet className="h-5 w-5 text-purple-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{stats.usersWithWallets}</p>
-          <p className="text-xs text-gray-600">With Wallets</p>
-        </Card>
-
-        <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-          <div className="bg-emerald-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
-            <Shield className="h-5 w-5 text-emerald-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{stats.votingEnabledUsers}</p>
-          <p className="text-xs text-gray-600">Voting Enabled</p>
-        </Card>
-
-        <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
-          <div className="bg-orange-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
-            <TrendingUp className="h-5 w-5 text-orange-600" />
-          </div>
-          <p className="text-xl font-bold text-gray-900">{stats.totalVotesCast}</p>
-          <p className="text-xs text-gray-600">Votes Cast</p>
-        </Card>
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl">
+        {[
+          { id: 'overview', label: 'Overview', icon: Database },
+          { id: 'verification', label: 'User Verification', icon: Shield },
+          { id: 'management', label: 'User Management', icon: Users }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                activeTab === tab.id
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Filters and Search */}
-      <Card className="backdrop-blur-sm bg-white/80 border-white/20">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="md:col-span-2">
-            <Input
-              icon={Search}
-              placeholder="Search by name, email, or student ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="w-full h-14 rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2 focus:ring-opacity-20 text-base"
-            >
-              <option value="all">All Users</option>
-              <option value="verified">Verified Only</option>
-              <option value="unverified">Unverified Only</option>
-              <option value="with-wallet">With Wallet</option>
-              <option value="without-wallet">Without Wallet</option>
-            </select>
+      {/* Tab Content */}
+      {activeTab === 'verification' && <UserVerification />}
+
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Statistics */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+            <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="bg-blue-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Users className="h-5 w-5 text-blue-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-900">{stats.totalUsers}</p>
+              <p className="text-xs text-gray-600">Total Users</p>
+            </Card>
+
+            <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="bg-green-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <UserCheck className="h-5 w-5 text-green-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-900">{stats.verifiedUsers}</p>
+              <p className="text-xs text-gray-600">Verified</p>
+            </Card>
+
+            <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="bg-amber-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <UserX className="h-5 w-5 text-amber-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-900">{stats.unverifiedUsers}</p>
+              <p className="text-xs text-gray-600">Unverified</p>
+            </Card>
+
+            <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="bg-purple-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Wallet className="h-5 w-5 text-purple-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-900">{stats.usersWithWallets}</p>
+              <p className="text-xs text-gray-600">With Wallets</p>
+            </Card>
+
+            <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="bg-emerald-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Shield className="h-5 w-5 text-emerald-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-900">{stats.votingEnabledUsers}</p>
+              <p className="text-xs text-gray-600">Voting Enabled</p>
+            </Card>
+
+            <Card className="text-center backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="bg-orange-100 w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2">
+                <TrendingUp className="h-5 w-5 text-orange-600" />
+              </div>
+              <p className="text-xl font-bold text-gray-900">{stats.totalVotesCast}</p>
+              <p className="text-xs text-gray-600">Votes Cast</p>
+            </Card>
           </div>
 
-          <div className="flex space-x-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="flex-1 h-14 rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2 focus:ring-opacity-20 text-base"
-            >
-              <option value="date">Sort by Date</option>
-              <option value="name">Sort by Name</option>
-              <option value="email">Sort by Email</option>
-              <option value="votes">Sort by Votes</option>
-            </select>
-            <Button
-              variant="outline"
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              className="px-3"
-            >
-              {sortOrder === 'asc' ? '↑' : '↓'}
-            </Button>
-          </div>
-        </div>
-      </Card>
+          {/* Quick Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="text-center">
+                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Shield className="h-8 w-8 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Verify Specific Users</h3>
+                <p className="text-gray-600 mb-4">Check and enable voting for target user accounts</p>
+                <Button 
+                  onClick={() => setActiveTab('verification')}
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600"
+                >
+                  Verify Users
+                </Button>
+              </div>
+            </Card>
 
-      {/* Unverified Users Section */}
-      {unverifiedUsers.length > 0 && (
-        <div>
-          <div className="flex items-center space-x-2 mb-4">
-            <UserX className="h-5 w-5 text-amber-600" />
-            <h3 className="text-lg font-semibold text-gray-900">
-              Unverified Accounts ({unverifiedUsers.length})
-            </h3>
-            <span className="text-sm text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
-              Require Admin Action
-            </span>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-4">
-            {unverifiedUsers.map((user) => (
-              <UserCard
-                key={user.id}
-                user={user}
-                updating={updating === user.id}
-                onToggleVoting={handleToggleClick}
-                onToggleVerification={handleToggleClick}
-              />
-            ))}
+            <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="text-center">
+                <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Users className="h-8 w-8 text-green-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Manage All Users</h3>
+                <p className="text-gray-600 mb-4">View and manage all registered user accounts</p>
+                <Button 
+                  onClick={() => setActiveTab('management')}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Manage Users
+                </Button>
+              </div>
+            </Card>
+
+            <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+              <div className="text-center">
+                <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Download className="h-8 w-8 text-purple-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Export User Data</h3>
+                <p className="text-gray-600 mb-4">Download user data for analysis and reporting</p>
+                <Button 
+                  onClick={handleExportUsers}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Export CSV
+                </Button>
+              </div>
+            </Card>
           </div>
         </div>
       )}
 
-      {/* Verified Users Section */}
-      {verifiedUsers.length > 0 && (
-        <div>
-          <div className="flex items-center space-x-2 mb-4">
-            <UserCheck className="h-5 w-5 text-green-600" />
-            <h3 className="text-lg font-semibold text-gray-900">
-              Verified Accounts ({verifiedUsers.length})
-            </h3>
-            <span className="text-sm text-green-600 bg-green-100 px-2 py-1 rounded-full">
-              Can Vote
-            </span>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-4">
-            {verifiedUsers.map((user) => (
-              <UserCard
-                key={user.id}
-                user={user}
-                updating={updating === user.id}
-                onToggleVoting={handleToggleClick}
-                onToggleVerification={handleToggleClick}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      {activeTab === 'management' && (
+        <div className="space-y-6">
+          {/* Success/Error Messages */}
+          {success && (
+            <Card className="bg-green-50 border-green-200">
+              <div className="flex items-center space-x-3 text-green-600">
+                <CheckCircle className="h-5 w-5" />
+                <p>{success}</p>
+              </div>
+            </Card>
+          )}
 
-      {/* No Users Found */}
-      {filteredAndSortedUsers.length === 0 && (
-        <Card className="text-center py-12 backdrop-blur-sm bg-white/80 border-white/20">
-          <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-medium text-gray-900 mb-2">No users found</h3>
-          <p className="text-gray-600">
-            {searchTerm || statusFilter !== 'all' 
-              ? 'Try adjusting your search or filters'
-              : 'No users have registered yet'
-            }
-          </p>
-        </Card>
+          {error && (
+            <Card className="bg-red-50 border-red-200">
+              <div className="flex items-center space-x-3 text-red-600">
+                <AlertCircle className="h-5 w-5" />
+                <p>{error}</p>
+              </div>
+            </Card>
+          )}
+
+          {/* Filters and Search */}
+          <Card className="backdrop-blur-sm bg-white/80 border-white/20">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="md:col-span-2">
+                <Input
+                  icon={Search}
+                  placeholder="Search by name, email, or student ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="w-full h-14 rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2 focus:ring-opacity-20 text-base"
+                >
+                  <option value="all">All Users</option>
+                  <option value="verified">Verified Only</option>
+                  <option value="unverified">Unverified Only</option>
+                  <option value="with-wallet">With Wallet</option>
+                  <option value="without-wallet">Without Wallet</option>
+                </select>
+              </div>
+
+              <div className="flex space-x-2">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="flex-1 h-14 rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:ring-2 focus:ring-opacity-20 text-base"
+                >
+                  <option value="date">Sort by Date</option>
+                  <option value="name">Sort by Name</option>
+                  <option value="email">Sort by Email</option>
+                  <option value="votes">Sort by Votes</option>
+                </select>
+                <Button
+                  variant="outline"
+                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                  className="px-3"
+                >
+                  {sortOrder === 'asc' ? '↑' : '↓'}
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Unverified Users Section */}
+          {unverifiedUsers.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <UserX className="h-5 w-5 text-amber-600" />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Unverified Accounts ({unverifiedUsers.length})
+                </h3>
+                <span className="text-sm text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+                  Require Admin Action
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4">
+                {unverifiedUsers.map((user) => (
+                  <UserCard
+                    key={user.id}
+                    user={user}
+                    updating={updating === user.id}
+                    onToggleVoting={handleToggleClick}
+                    onToggleVerification={handleToggleClick}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Verified Users Section */}
+          {verifiedUsers.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <UserCheck className="h-5 w-5 text-green-600" />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Verified Accounts ({verifiedUsers.length})
+                </h3>
+                <span className="text-sm text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                  Can Vote
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4">
+                {verifiedUsers.map((user) => (
+                  <UserCard
+                    key={user.id}
+                    user={user}
+                    updating={updating === user.id}
+                    onToggleVoting={handleToggleClick}
+                    onToggleVerification={handleToggleClick}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No Users Found */}
+          {filteredAndSortedUsers.length === 0 && (
+            <Card className="text-center py-12 backdrop-blur-sm bg-white/80 border-white/20">
+              <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-medium text-gray-900 mb-2">No users found</h3>
+              <p className="text-gray-600">
+                {searchTerm || statusFilter !== 'all' 
+                  ? 'Try adjusting your search or filters'
+                  : 'No users have registered yet'
+                }
+              </p>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Confirmation Dialog */}
