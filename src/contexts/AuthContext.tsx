@@ -10,6 +10,10 @@ interface Student {
   student_id: string;
   wallet_address: string | null;
   verified: boolean;
+  voting_enabled?: boolean; // Added voting_enabled field
+  created_at: string;
+  updated_at: string;
+  last_login?: string; // Added last_login field
 }
 
 interface AuthContextType {
@@ -118,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setIsAdmin(!!adminData);
 
-      // Then load student data
+      // Then load student data with all fields including voting_enabled
       const { data: studentData } = await supabase
         .from('students')
         .select('*')
@@ -126,7 +130,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
 
       if (studentData) {
-        setStudent(studentData);
+        // Update last_login timestamp
+        await supabase
+          .from('students')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', userId);
+
+        setStudent({
+          ...studentData,
+          voting_enabled: studentData.voting_enabled !== false // Default to true if null
+        });
       }
 
     } catch (error) {
@@ -217,7 +230,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error } = await supabase
         .from('students')
-        .update(updates)
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', student.id);
 
       if (!error) {
