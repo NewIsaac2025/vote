@@ -35,7 +35,7 @@ if (supabaseAnonKey.includes('your-anon-key') || supabaseAnonKey === 'your-anon-
   throw new Error('Please replace the placeholder Supabase anon key with your actual anon key from https://supabase.com/dashboard');
 }
 
-// Create Supabase client with persistent connection configuration
+// Create Supabase client with optimized configuration for maximum performance
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -58,52 +58,64 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Test connection function with persistent retry mechanism
+// Optimized connection test with retry mechanism
 export const testSupabaseConnection = async (): Promise<boolean> => {
   try {
     if (import.meta.env.DEV) {
       console.log('Testing Supabase connection...');
     }
     
-    // Simple health check - try to get a count from elections table
-    const { data, error } = await supabase
-      .from('elections')
-      .select('id', { count: 'exact', head: true })
-      .limit(1);
+    // Simple health check with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     
-    if (error) {
-      // Handle the specific error from the query
-      if (error?.code === 'PGRST116') {
-        // This error means the query returned no results, but connection is working
-        if (import.meta.env.DEV) {
-          console.log('Supabase connection test successful (no data found, but connection works)');
+    try {
+      const { data, error } = await supabase
+        .from('elections')
+        .select('id', { count: 'exact', head: true })
+        .limit(1)
+        .abortSignal(controller.signal);
+      
+      clearTimeout(timeoutId);
+      
+      if (error) {
+        // Handle the specific error from the query
+        if (error?.code === 'PGRST116') {
+          // This error means the query returned no results, but connection is working
+          if (import.meta.env.DEV) {
+            console.log('Supabase connection test successful (no data found, but connection works)');
+          }
+          return true;
         }
-        return true;
+        
+        console.error('Supabase connection test failed:', error);
+        
+        // Check if it's a network error
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('NetworkError') || 
+            error.message.includes('fetch')) {
+          throw new Error('Network connection failed. Please check your internet connection and Supabase URL.');
+        }
+        
+        // Check if it's an authentication error
+        if (error.message.includes('Invalid API key') || 
+            error.message.includes('unauthorized') ||
+            error.message.includes('JWT')) {
+          throw new Error('Invalid Supabase credentials. Please check your VITE_SUPABASE_ANON_KEY.');
+        }
+        
+        throw new Error(`Database connection failed: ${error.message}`);
       }
       
-      console.error('Supabase connection test failed:', error);
-      
-      // Check if it's a network error
-      if (error.message.includes('Failed to fetch') || 
-          error.message.includes('NetworkError') || 
-          error.message.includes('fetch')) {
-        throw new Error('Network connection failed. Please check your internet connection and Supabase URL.');
+      if (import.meta.env.DEV) {
+        console.log('Supabase connection test successful');
       }
-      
-      // Check if it's an authentication error
-      if (error.message.includes('Invalid API key') || 
-          error.message.includes('unauthorized') ||
-          error.message.includes('JWT')) {
-        throw new Error('Invalid Supabase credentials. Please check your VITE_SUPABASE_ANON_KEY.');
-      }
-      
-      throw new Error(`Database connection failed: ${error.message}`);
+      return true;
+
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
     }
-    
-    if (import.meta.env.DEV) {
-      console.log('Supabase connection test successful');
-    }
-    return true;
 
   } catch (error) {
     console.error('Supabase connection test error:', error);
@@ -111,6 +123,11 @@ export const testSupabaseConnection = async (): Promise<boolean> => {
     // Handle network errors specifically
     if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
       throw new Error('Unable to reach Supabase server. Please check your VITE_SUPABASE_URL and internet connection.');
+    }
+    
+    // Handle abort errors (timeout)
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Connection timeout. Please check your internet connection and try again.');
     }
     
     // Re-throw custom errors
@@ -134,8 +151,10 @@ export type Database = {
           student_id: string;
           wallet_address: string | null;
           verified: boolean;
+          voting_enabled: boolean;
           created_at: string;
           updated_at: string;
+          last_login: string | null;
         };
         Insert: {
           id?: string;
@@ -145,8 +164,10 @@ export type Database = {
           student_id: string;
           wallet_address?: string | null;
           verified?: boolean;
+          voting_enabled?: boolean;
           created_at?: string;
           updated_at?: string;
+          last_login?: string | null;
         };
         Update: {
           id?: string;
@@ -156,7 +177,9 @@ export type Database = {
           student_id?: string;
           wallet_address?: string | null;
           verified?: boolean;
+          voting_enabled?: boolean;
           updated_at?: string;
+          last_login?: string | null;
         };
       };
       elections: {

@@ -1,42 +1,18 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Vote, Shield, Zap, Users, ArrowRight, Trophy, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { useOptimizedElections } from '../hooks/useOptimizedElections';
 import { getElectionStatus, formatDate } from '../lib/utils';
+import { optimizeSupabaseConnection, preloadCriticalData } from '../utils/performanceOptimizations';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
 import HowItWorks from '../components/Home/HowItWorks';
 import TechnologySection from '../components/Home/TechnologySection';
 import RegistrationGuide from '../components/Home/RegistrationGuide';
 
-interface Election {
-  id: string;
-  title: string;
-  description: string;
-  start_date: string;
-  end_date: string;
-  is_active: boolean;
-}
-
-interface ElectionResult {
-  candidate_id: string;
-  candidate_name: string;
-  department: string;
-  course: string;
-  vote_count: number;
-}
-
-// Cache for election results to improve performance
-const electionsCache = new Map<string, { data: Election[]; timestamp: number }>();
-const resultsCache = new Map<string, { data: ElectionResult[]; timestamp: number }>();
-const CACHE_DURATION = 60000; // 1 minute for home page
-
 const Home: React.FC = () => {
-  const [elections, setElections] = useState<Election[]>([]);
-  const [results, setResults] = useState<Record<string, ElectionResult[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [loadingResults, setLoadingResults] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { elections, loading, error, statistics, refetch } = useOptimizedElections();
+  const [initialized, setInitialized] = useState(false);
 
   const features = useMemo(() => [
     {
@@ -56,115 +32,14 @@ const Home: React.FC = () => {
     }
   ], []);
 
-  const fetchElections = useCallback(async () => {
-    try {
-      setError(null);
-      
-      // Check cache first
-      const cached = electionsCache.get('active_elections');
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        setElections(cached.data);
-        await fetchResultsForElections(cached.data);
-        return;
-      }
-
-      console.log('Fetching elections...');
-      
-      const { data: electionsData, error: electionsError } = await supabase
-        .from('elections')
-        .select('id, title, description, start_date, end_date, is_active')
-        .eq('is_active', true)
-        .order('start_date', { ascending: false })
-        .limit(3);
-
-      if (electionsError) {
-        console.error('Elections fetch error:', electionsError);
-        throw new Error(`Failed to fetch elections: ${electionsError.message}`);
-      }
-
-      console.log('Elections fetched successfully:', electionsData);
-      
-      const elections = electionsData || [];
-      setElections(elections);
-      
-      // Cache the elections
-      electionsCache.set('active_elections', {
-        data: elections,
-        timestamp: Date.now()
-      });
-
-      // Fetch results for elections
-      await fetchResultsForElections(elections);
-
-    } catch (error) {
-      console.error('Error fetching elections:', error);
-      setError(error instanceof Error ? error.message : 'An unexpected error occurred while fetching elections.');
-    }
-  }, []);
-
-  const fetchResultsForElections = useCallback(async (electionsToFetch: Election[]) => {
-    if (electionsToFetch.length === 0) return;
-    
-    setLoadingResults(true);
-    
-    try {
-      // Process elections in parallel but limit concurrency
-      const resultsPromises = electionsToFetch.map(async (election) => {
-        // Check cache first
-        const cached = resultsCache.get(election.id);
-        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-          return { electionId: election.id, results: cached.data };
-        }
-
-        try {
-          const { data: resultsData, error: resultsError } = await supabase
-            .rpc('get_election_results', { election_uuid: election.id });
-
-          if (resultsError) {
-            console.warn(`Failed to fetch results for election ${election.id}:`, resultsError);
-            return { electionId: election.id, results: [] };
-          }
-
-          const results = resultsData || [];
-          
-          // Cache the results
-          resultsCache.set(election.id, {
-            data: results,
-            timestamp: Date.now()
-          });
-
-          return { electionId: election.id, results };
-        } catch (resultError) {
-          console.warn(`Error fetching results for election ${election.id}:`, resultError);
-          return { electionId: election.id, results: [] };
-        }
-      });
-
-      const allResults = await Promise.all(resultsPromises);
-      
-      // Update results state
-      const resultsMap: Record<string, ElectionResult[]> = {};
-      allResults.forEach(({ electionId, results }) => {
-        resultsMap[electionId] = results;
-      });
-      
-      setResults(resultsMap);
-    } catch (error) {
-      console.error('Error fetching election results:', error);
-    } finally {
-      setLoadingResults(false);
-    }
-  }, []);
-
-  const retryConnection = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    fetchElections().finally(() => setLoading(false));
-  }, [fetchElections]);
-
+  // Initialize performance optimizations
   useEffect(() => {
-    fetchElections().finally(() => setLoading(false));
-  }, [fetchElections]);
+    if (!initialized) {
+      optimizeSupabaseConnection();
+      preloadCriticalData();
+      setInitialized(true);
+    }
+  }, [initialized]);
 
   const getStatusColor = useCallback((status: string) => {
     switch (status) {
@@ -297,16 +172,13 @@ const Home: React.FC = () => {
           {error ? (
             <Card className="text-center py-8 mb-8 bg-red-50 border-red-200">
               <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-red-900 mb-2">Connection Failed</h3>
-              <p className="text-red-700 mb-4 max-w-2xl mx-auto">{error}</p>
+              <h3 className="text-lg font-medium text-red-900 mb-2">Failed to Load Elections</h3>
+              <p className="text-red-700 mb-4">{error}</p>
               <div className="space-y-2">
-                <Button onClick={retryConnection} className="bg-red-600 hover:bg-red-700">
+                <Button onClick={refetch} className="bg-red-600 hover:bg-red-700">
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Retry Connection
+                  Try Again
                 </Button>
-                <p className="text-sm text-red-600">
-                  If this persists, please check your Supabase configuration in the .env file
-                </p>
               </div>
             </Card>
           ) : loading ? (
@@ -316,20 +188,10 @@ const Home: React.FC = () => {
             </div>
           ) : elections.length > 0 ? (
             <>
-              {/* Loading indicator for results */}
-              {loadingResults && (
-                <div className="mb-6 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
-                  <span className="text-gray-600 text-sm">Loading results...</span>
-                </div>
-              )}
-              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {elections.map((election) => {
                   const status = getElectionStatus(election.start_date, election.end_date);
                   const StatusIcon = getStatusIcon(status);
-                  const electionResults = results[election.id] || [];
-                  const totalVotes = electionResults.reduce((sum, result) => sum + result.vote_count, 0);
 
                   return (
                     <Card key={election.id} className="hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm bg-white/90 border-white/20" hover>
@@ -355,28 +217,28 @@ const Home: React.FC = () => {
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">Total Votes:</span>
-                          <span className="text-gray-900 font-medium">{totalVotes}</span>
+                          <span className="text-gray-900 font-medium">{election.total_votes}</span>
                         </div>
                       </div>
 
                       {/* Only show leading candidate if election has ended */}
-                      {electionResults.length > 0 && status === 'ended' && (
+                      {election.leading_votes > 0 && status === 'ended' && (
                         <div className="mb-4">
                           <h4 className="text-sm font-medium text-gray-700 mb-2">Winner:</h4>
                           <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-3 rounded-md border border-yellow-200">
-                            <p className="font-medium text-yellow-900">{electionResults[0]?.candidate_name}</p>
-                            <p className="text-sm text-yellow-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
+                            <p className="font-medium text-yellow-900">{election.leading_candidate}</p>
+                            <p className="text-sm text-yellow-700">{election.leading_votes} votes</p>
                           </div>
                         </div>
                       )}
 
                       {/* Show current leader for active elections */}
-                      {electionResults.length > 0 && status === 'active' && (
+                      {election.leading_votes > 0 && status === 'active' && (
                         <div className="mb-4">
                           <h4 className="text-sm font-medium text-gray-700 mb-2">Currently Leading:</h4>
                           <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded-md">
-                            <p className="font-medium text-blue-900">{electionResults[0]?.candidate_name}</p>
-                            <p className="text-sm text-blue-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
+                            <p className="font-medium text-blue-900">{election.leading_candidate}</p>
+                            <p className="text-sm text-blue-700">{election.leading_votes} votes</p>
                           </div>
                         </div>
                       )}
