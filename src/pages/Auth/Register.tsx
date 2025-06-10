@@ -4,11 +4,11 @@ import { User, Mail, Phone, Car as IdCard, ArrowRight, ArrowLeft, Check, Sparkle
 import { supabase } from '../../lib/supabase';
 import { generateOTP, validateEmail, validatePhone, validateStudentId } from '../../lib/utils';
 import { sendEmail, generateOTPEmail, generateWelcomeEmail } from '../../lib/email';
-import { connectWallet } from '../../lib/blockchain';
 import { useAuth } from '../../contexts/AuthContext';
 import Input from '../../components/UI/Input';
 import Button from '../../components/UI/Button';
 import Card from '../../components/UI/Card';
+import WalletInputModal from '../../components/UI/WalletInputModal';
 
 interface FormData {
   fullName: string;
@@ -34,6 +34,7 @@ const Register: React.FC = () => {
   const [otp, setOtp] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
+  const [showWalletModal, setShowWalletModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -166,25 +167,21 @@ const Register: React.FC = () => {
     }
   };
 
-  const handleWalletConnection = async () => {
+  const handleWalletConnection = () => {
+    setShowWalletModal(true);
+  };
+
+  const handleWalletSubmit = async (inputWalletAddress: string) => {
     setLoading(true);
     setErrors({});
     
     try {
-      console.log('Starting wallet connection process...');
+      console.log('Starting registration with wallet:', inputWalletAddress);
       
-      // Step 1: Connect wallet first
-      const wallet = await connectWallet();
-      
-      if (!wallet) {
-        setErrors({ wallet: 'Failed to connect MetaMask wallet. Please make sure MetaMask is installed and unlocked.' });
-        return;
-      }
+      // Set the wallet address
+      setWalletAddress(inputWalletAddress);
 
-      console.log('Wallet connected:', wallet.address);
-      setWalletAddress(wallet.address);
-
-      // Step 2: Create Supabase auth user
+      // Step 1: Create Supabase auth user
       console.log('Creating Supabase auth user...');
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email.trim().toLowerCase(),
@@ -217,7 +214,7 @@ const Register: React.FC = () => {
 
       console.log('Auth user created:', authData.user.id);
 
-      // Step 3: Create student record with the authenticated user's ID
+      // Step 2: Create student record with the authenticated user's ID
       console.log('Creating student record...');
       const { data: studentData, error: studentError } = await supabase
         .from('students')
@@ -227,7 +224,7 @@ const Register: React.FC = () => {
           email: formData.email.trim().toLowerCase(),
           phone: formData.phone.trim(),
           student_id: formData.studentId.trim(),
-          wallet_address: wallet.address,
+          wallet_address: inputWalletAddress,
           verified: true
         })
         .select()
@@ -253,7 +250,7 @@ const Register: React.FC = () => {
 
       console.log('Student record created:', studentData);
 
-      // Step 4: Send welcome email (non-blocking)
+      // Step 3: Send welcome email (non-blocking)
       try {
         await sendEmail({
           to: formData.email,
@@ -266,7 +263,7 @@ const Register: React.FC = () => {
         // Don't fail the registration if email fails
       }
 
-      // Step 5: Auto sign in the user
+      // Step 4: Auto sign in the user
       console.log('Auto-signing in user...');
       const { error: signInError } = await signIn(formData.email, formData.password);
       
@@ -275,18 +272,16 @@ const Register: React.FC = () => {
         // Don't fail registration if auto sign-in fails
       }
 
+      // Close modal and proceed to success step
+      setShowWalletModal(false);
       setCurrentStep(4);
       console.log('Registration completed successfully');
 
     } catch (error: any) {
-      console.error('Wallet connection error:', error);
+      console.error('Registration error:', error);
       
-      // Handle specific wallet errors
-      if (error.message?.includes('User rejected')) {
-        setErrors({ wallet: 'MetaMask connection was cancelled. Please try again and approve the connection.' });
-      } else if (error.message?.includes('MetaMask')) {
-        setErrors({ wallet: 'MetaMask error. Please make sure MetaMask is installed, unlocked, and try again.' });
-      } else if (error.message?.includes('network')) {
+      // Handle specific errors
+      if (error.message?.includes('network')) {
         setErrors({ wallet: 'Network error. Please check your internet connection and try again.' });
       } else {
         setErrors({ wallet: `Registration failed: ${error.message || 'Unknown error occurred'}` });
@@ -532,7 +527,7 @@ const Register: React.FC = () => {
                   Connect Your Wallet
                 </h2>
                 <p className="text-gray-600 text-lg">
-                  Connect your MetaMask wallet to secure your votes on the blockchain
+                  Enter your MetaMask wallet address to secure your votes on the blockchain
                 </p>
               </div>
 
@@ -568,10 +563,10 @@ const Register: React.FC = () => {
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <h4 className="font-medium text-amber-900 mb-2">⚠️ Important Notes</h4>
                   <ul className="text-amber-800 text-sm space-y-1">
-                    <li>• Make sure MetaMask is installed and unlocked</li>
-                    <li>• Use the same browser and device for consistency</li>
+                    <li>• Enter your MetaMask wallet address (starts with "0x")</li>
                     <li>• Your wallet will be permanently linked to this account</li>
-                    <li>• Approve the connection when MetaMask prompts you</li>
+                    <li>• Only enter your own wallet address</li>
+                    <li>• We only need your public address, never your private keys</li>
                   </ul>
                 </div>
 
@@ -590,10 +585,9 @@ const Register: React.FC = () => {
                     type="button"
                     onClick={handleWalletConnection}
                     className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all duration-200 hover:scale-[1.02]"
-                    loading={loading}
                     size="lg"
                   >
-                    {loading ? 'Connecting...' : 'Connect MetaMask'}
+                    Enter Wallet Address
                   </Button>
                 </div>
               </div>
@@ -656,6 +650,14 @@ const Register: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Wallet Input Modal */}
+      <WalletInputModal
+        isOpen={showWalletModal}
+        onClose={() => setShowWalletModal(false)}
+        onWalletSubmit={handleWalletSubmit}
+        loading={loading}
+      />
     </div>
   );
 };
