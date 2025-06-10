@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Vote, Calendar, Clock, Users, ArrowLeft, CheckCircle, 
   AlertCircle, Wallet, Shield, TrendingUp, User, Award,
@@ -144,6 +144,12 @@ const ElectionDetails: React.FC = () => {
 
     if (!student.verified) {
       setError('Please verify your account to vote');
+      return;
+    }
+
+    // Check if wallet is connected
+    if (!student.wallet_address) {
+      setError('Please verify your wallet to vote');
       return;
     }
 
@@ -310,8 +316,9 @@ const ElectionDetails: React.FC = () => {
 
   const status = getElectionStatus(election.start_date, election.end_date);
   const totalVotes = results.reduce((sum, result) => sum + result.vote_count, 0);
-  const canVote = status === 'active' && user && student?.verified && !hasVoted && !voting;
+  const canVote = status === 'active' && user && student?.verified && student?.wallet_address && !hasVoted && !voting;
   const isActiveElection = status === 'active';
+  const needsWalletVerification = user && student && !student.wallet_address;
 
   // Get candidate details for the modal
   const candidateForModal = candidateToVote ? candidates.find(c => c.id === candidateToVote) : null;
@@ -393,6 +400,26 @@ const ElectionDetails: React.FC = () => {
           </Card>
         )}
 
+        {/* Wallet Verification Alert */}
+        {needsWalletVerification && (
+          <Card className="mb-8 bg-amber-50 border-amber-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Wallet className="h-6 w-6 text-amber-600" />
+                <div>
+                  <p className="font-medium text-amber-900">Wallet Verification Required</p>
+                  <p className="text-sm text-amber-700">You need to verify your MetaMask wallet to participate in voting</p>
+                </div>
+              </div>
+              <Link to="/wallet-verification">
+                <Button className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600">
+                  Verify Wallet
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        )}
+
         {/* Voting Status */}
         {user && (
           <Card className="mb-8 backdrop-blur-sm bg-white/80 border-white/20">
@@ -449,7 +476,7 @@ const ElectionDetails: React.FC = () => {
                 <AlertCircle className="h-6 w-6" />
                 <div>
                   <p className="font-medium">Verification Required</p>
-                  <p className="text-sm text-gray-600">Please verify your account to vote</p>
+                  <p className="text-sm text-gray-600">Please verify your account and wallet to vote</p>
                 </div>
               </div>
             )}

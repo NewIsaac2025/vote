@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Vote, LogOut, User, Shield, Menu, X, Sparkles } from 'lucide-react';
+import { Vote, LogOut, User, Shield, Menu, X, Sparkles, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { truncateAddress } from '../../lib/utils';
+import Button from '../UI/Button';
 
 const Header: React.FC = () => {
   const { user, student, isAdmin, signOut } = useAuth();
@@ -30,6 +31,9 @@ const Header: React.FC = () => {
       setSigningOut(false);
     }
   };
+
+  // Check if user needs wallet verification
+  const needsWalletVerification = user && student && !student.wallet_address;
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-white/20 shadow-sm">
@@ -75,6 +79,17 @@ const Header: React.FC = () => {
           <div className="hidden md:flex items-center space-x-4">
             {user ? (
               <div className="flex items-center space-x-3">
+                {/* Wallet Verification Alert */}
+                {needsWalletVerification && (
+                  <Link
+                    to="/wallet-verification"
+                    className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl text-sm font-medium hover:from-amber-600 hover:to-orange-600 transition-all duration-200 shadow-lg hover:shadow-xl animate-pulse"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>Verify Wallet</span>
+                  </Link>
+                )}
+
                 {isAdmin && (
                   <Link
                     to="/admin"
@@ -164,6 +179,18 @@ const Header: React.FC = () => {
             
             {user ? (
               <div className="pt-4 border-t border-gray-200 space-y-2">
+                {/* Mobile Wallet Verification Alert */}
+                {needsWalletVerification && (
+                  <Link
+                    to="/wallet-verification"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center space-x-3 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl animate-pulse"
+                  >
+                    <AlertTriangle className="h-5 w-5" />
+                    <span>Verify Wallet to Vote</span>
+                  </Link>
+                )}
+
                 {student && (
                   <Link
                     to="/profile"
@@ -171,7 +198,14 @@ const Header: React.FC = () => {
                     className="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-xl"
                   >
                     <User className="h-5 w-5" />
-                    <span>{student.full_name}</span>
+                    <div className="flex-1">
+                      <span>{student.full_name}</span>
+                      {student.wallet_address && (
+                        <div className="text-xs text-green-600 font-medium">
+                          {truncateAddress(student.wallet_address)}
+                        </div>
+                      )}
+                    </div>
                   </Link>
                 )}
                 {isAdmin && (

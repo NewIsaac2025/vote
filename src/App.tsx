@@ -9,6 +9,7 @@ import ProtectedRoute from './components/Auth/ProtectedRoute';
 import Home from './pages/Home';
 import Register from './pages/Auth/Register';
 import WalletInput from './pages/Auth/WalletInput';
+import WalletVerification from './pages/Auth/WalletVerification';
 import RegistrationSuccess from './pages/Auth/RegistrationSuccess';
 import Login from './pages/Auth/Login';
 import Elections from './pages/Elections';
@@ -46,6 +47,7 @@ const App: React.FC = () => {
               <Route path="/" element={<Home />} />
               <Route path="/register" element={<Register />} />
               <Route path="/wallet-input" element={<WalletInput />} />
+              <Route path="/wallet-verification" element={<WalletVerification />} />
               <Route path="/registration-success" element={<RegistrationSuccess />} />
               <Route path="/login" element={<Login />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
