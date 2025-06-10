@@ -189,8 +189,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setStudent(null);
       setIsAdmin(false);
       
-      // Only call Supabase signOut if there's an active user session
-      if (user) {
+      // Check if there's an active session before attempting to sign out
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.warn('Error checking session during sign out:', sessionError.message);
+        return; // Exit early if we can't check the session
+      }
+      
+      // Only call Supabase signOut if there's an active session
+      if (session?.user) {
         const { error } = await supabase.auth.signOut();
         
         if (error) {
@@ -208,6 +216,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error('Error signing out:', error);
           }
         }
+      } else {
+        console.log('No active session found, skipping server-side sign out');
       }
       
     } catch (error) {
