@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { CheckCircle, User, Mail, IdCard, Wallet, ArrowRight, Trophy, Sparkles, Shield } from 'lucide-react';
+import { CheckCircle, User, Mail, Car as IdCard, Wallet, ArrowRight, Trophy, Sparkles, Shield } from 'lucide-react';
 import { truncateAddress } from '../../lib/utils';
 import Button from '../../components/UI/Button';
 import Card from '../../components/UI/Card';
