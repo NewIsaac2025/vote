@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { generateOTP, validateEmail, validatePhone, validateStudentId } from '../../lib/utils';
 import { sendEmail, generateOTPEmail, generateWelcomeEmail } from '../../lib/email';
 import { connectWallet } from '../../lib/blockchain';
+import { useAuth } from '../../contexts/AuthContext';
 import Input from '../../components/UI/Input';
 import Button from '../../components/UI/Button';
 import Card from '../../components/UI/Card';
@@ -20,6 +21,7 @@ interface FormData {
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>({
     fullName: '',
@@ -82,6 +84,7 @@ const Register: React.FC = () => {
     if (!validateStep1()) return;
 
     setLoading(true);
+    setErrors({});
     
     try {
       // Check if email or student ID already exists
@@ -151,6 +154,7 @@ const Register: React.FC = () => {
     }
 
     setLoading(true);
+    setErrors({});
     
     try {
       setCurrentStep(3);
@@ -164,11 +168,26 @@ const Register: React.FC = () => {
 
   const handleWalletConnection = async () => {
     setLoading(true);
+    setErrors({});
     
     try {
-      // First, create the Supabase auth user
+      console.log('Starting wallet connection process...');
+      
+      // Step 1: Connect wallet first
+      const wallet = await connectWallet();
+      
+      if (!wallet) {
+        setErrors({ wallet: 'Failed to connect MetaMask wallet. Please make sure MetaMask is installed and unlocked.' });
+        return;
+      }
+
+      console.log('Wallet connected:', wallet.address);
+      setWalletAddress(wallet.address);
+
+      // Step 2: Create Supabase auth user
+      console.log('Creating Supabase auth user...');
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
         options: {
           emailRedirectTo: undefined // Disable email confirmation since we already verified
@@ -177,53 +196,101 @@ const Register: React.FC = () => {
 
       if (authError) {
         console.error('Auth error:', authError);
-        setErrors({ wallet: 'Failed to create account. Please try again.' });
+        
+        // Handle specific auth errors
+        if (authError.message.includes('User already registered')) {
+          setErrors({ wallet: 'This email is already registered. Please use a different email or sign in instead.' });
+        } else if (authError.message.includes('Invalid email')) {
+          setErrors({ wallet: 'Invalid email format. Please check your email address.' });
+        } else if (authError.message.includes('Password')) {
+          setErrors({ wallet: 'Password is too weak. Please use a stronger password.' });
+        } else {
+          setErrors({ wallet: `Account creation failed: ${authError.message}` });
+        }
         return;
       }
 
       if (!authData.user) {
-        setErrors({ wallet: 'Failed to create account. Please try again.' });
+        setErrors({ wallet: 'Failed to create user account. Please try again.' });
         return;
       }
 
-      // Connect wallet
-      const wallet = await connectWallet();
-      
-      if (wallet) {
-        setWalletAddress(wallet.address);
+      console.log('Auth user created:', authData.user.id);
+
+      // Step 3: Create student record with the authenticated user's ID
+      console.log('Creating student record...');
+      const { data: studentData, error: studentError } = await supabase
+        .from('students')
+        .insert({
+          id: authData.user.id, // Use the auth user's ID
+          full_name: formData.fullName.trim(),
+          email: formData.email.trim().toLowerCase(),
+          phone: formData.phone.trim(),
+          student_id: formData.studentId.trim(),
+          wallet_address: wallet.address,
+          verified: true
+        })
+        .select()
+        .single();
+
+      if (studentError) {
+        console.error('Student creation error:', studentError);
         
-        // Create student record with the authenticated user's ID
-        const { data: studentData, error: studentError } = await supabase
-          .from('students')
-          .insert({
-            id: authData.user.id, // Use the auth user's ID
-            full_name: formData.fullName,
-            email: formData.email,
-            phone: formData.phone,
-            student_id: formData.studentId,
-            wallet_address: wallet.address,
-            verified: true
-          })
-          .select()
-          .single();
-
-        if (studentError) {
-          console.error('Student creation error:', studentError);
-          throw studentError;
+        // Handle specific student creation errors
+        if (studentError.code === '23505') { // Unique constraint violation
+          if (studentError.message.includes('email')) {
+            setErrors({ wallet: 'This email is already registered. Please use a different email.' });
+          } else if (studentError.message.includes('student_id')) {
+            setErrors({ wallet: 'This student ID is already registered. Please use a different student ID.' });
+          } else {
+            setErrors({ wallet: 'Account already exists. Please sign in instead.' });
+          }
+        } else {
+          setErrors({ wallet: `Failed to create student profile: ${studentError.message}` });
         }
+        return;
+      }
 
-        // Send welcome email
+      console.log('Student record created:', studentData);
+
+      // Step 4: Send welcome email (non-blocking)
+      try {
         await sendEmail({
           to: formData.email,
           subject: 'Welcome to UniVote - Your Account is Ready!',
           html: generateWelcomeEmail(formData.fullName)
         });
-
-        setCurrentStep(4);
+        console.log('Welcome email sent');
+      } catch (emailError) {
+        console.warn('Failed to send welcome email:', emailError);
+        // Don't fail the registration if email fails
       }
-    } catch (error) {
+
+      // Step 5: Auto sign in the user
+      console.log('Auto-signing in user...');
+      const { error: signInError } = await signIn(formData.email, formData.password);
+      
+      if (signInError) {
+        console.warn('Auto sign-in failed:', signInError);
+        // Don't fail registration if auto sign-in fails
+      }
+
+      setCurrentStep(4);
+      console.log('Registration completed successfully');
+
+    } catch (error: any) {
       console.error('Wallet connection error:', error);
-      setErrors({ wallet: 'Failed to connect wallet. Please try again.' });
+      
+      // Handle specific wallet errors
+      if (error.message?.includes('User rejected')) {
+        setErrors({ wallet: 'MetaMask connection was cancelled. Please try again and approve the connection.' });
+      } else if (error.message?.includes('MetaMask')) {
+        setErrors({ wallet: 'MetaMask error. Please make sure MetaMask is installed, unlocked, and try again.' });
+      } else if (error.message?.includes('network')) {
+        setErrors({ wallet: 'Network error. Please check your internet connection and try again.' });
+      } else {
+        setErrors({ wallet: `Registration failed: ${error.message || 'Unknown error occurred'}` });
+      }
     } finally {
       setLoading(false);
     }
@@ -498,6 +565,16 @@ const Register: React.FC = () => {
                   </ul>
                 </div>
 
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <h4 className="font-medium text-amber-900 mb-2">⚠️ Important Notes</h4>
+                  <ul className="text-amber-800 text-sm space-y-1">
+                    <li>• Make sure MetaMask is installed and unlocked</li>
+                    <li>• Use the same browser and device for consistency</li>
+                    <li>• Your wallet will be permanently linked to this account</li>
+                    <li>• Approve the connection when MetaMask prompts you</li>
+                  </ul>
+                </div>
+
                 <div className="flex space-x-4">
                   <Button
                     type="button"
@@ -516,7 +593,7 @@ const Register: React.FC = () => {
                     loading={loading}
                     size="lg"
                   >
-                    Connect MetaMask
+                    {loading ? 'Connecting...' : 'Connect MetaMask'}
                   </Button>
                 </div>
               </div>
@@ -553,7 +630,7 @@ const Register: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600 font-medium">Wallet:</span>
                     <span className="font-semibold text-gray-900 font-mono text-sm">
-                      {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                      {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connected'}
                     </span>
                   </div>
                 </div>
