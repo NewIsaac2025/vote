@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Vote, Shield, Zap, Users, ArrowRight, Trophy, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import { supabase, testSupabaseConnection } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { getElectionStatus, formatDate } from '../lib/utils';
 import Card from '../components/UI/Card';
 import Button from '../components/UI/Button';
@@ -37,7 +37,6 @@ const Home: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingResults, setLoadingResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'testing' | 'connected' | 'failed'>('testing');
 
   const features = useMemo(() => [
     {
@@ -56,35 +55,6 @@ const Home: React.FC = () => {
       description: 'Watch election results update live as votes are cast throughout the voting period.'
     }
   ], []);
-
-  const initializeConnection = useCallback(async () => {
-    try {
-      setConnectionStatus('testing');
-      setError(null);
-      setLoading(true);
-      
-      const isConnected = await testSupabaseConnection();
-      
-      if (isConnected) {
-        setConnectionStatus('connected');
-        await fetchElections();
-      } else {
-        setConnectionStatus('failed');
-        setError('Unable to connect to the database. Please check your internet connection and try again.');
-      }
-    } catch (error) {
-      console.error('Connection initialization error:', error);
-      setConnectionStatus('failed');
-      
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('Failed to initialize database connection. Please refresh the page.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const fetchElections = useCallback(async () => {
     try {
@@ -187,12 +157,14 @@ const Home: React.FC = () => {
   }, []);
 
   const retryConnection = useCallback(() => {
-    initializeConnection();
-  }, [initializeConnection]);
+    setLoading(true);
+    setError(null);
+    fetchElections().finally(() => setLoading(false));
+  }, [fetchElections]);
 
   useEffect(() => {
-    initializeConnection();
-  }, [initializeConnection]);
+    fetchElections().finally(() => setLoading(false));
+  }, [fetchElections]);
 
   const getStatusColor = useCallback((status: string) => {
     switch (status) {
@@ -322,15 +294,7 @@ const Home: React.FC = () => {
             </p>
           </div>
 
-          {/* Connection Status */}
-          {connectionStatus === 'testing' && (
-            <div className="text-center mb-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-              <p className="text-gray-600">Connecting to database...</p>
-            </div>
-          )}
-
-          {connectionStatus === 'failed' && (
+          {error ? (
             <Card className="text-center py-8 mb-8 bg-red-50 border-red-200">
               <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-red-900 mb-2">Connection Failed</h3>
@@ -345,128 +309,112 @@ const Home: React.FC = () => {
                 </p>
               </div>
             </Card>
+          ) : loading ? (
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading elections...</p>
+            </div>
+          ) : elections.length > 0 ? (
+            <>
+              {/* Loading indicator for results */}
+              {loadingResults && (
+                <div className="mb-6 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
+                  <span className="text-gray-600 text-sm">Loading results...</span>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {elections.map((election) => {
+                  const status = getElectionStatus(election.start_date, election.end_date);
+                  const StatusIcon = getStatusIcon(status);
+                  const electionResults = results[election.id] || [];
+                  const totalVotes = electionResults.reduce((sum, result) => sum + result.vote_count, 0);
+
+                  return (
+                    <Card key={election.id} className="hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm bg-white/90 border-white/20" hover>
+                      <div className="flex items-center justify-between mb-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
+                          <StatusIcon className="h-3 w-3 mr-1" />
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </span>
+                        <Vote className="h-5 w-5 text-blue-600" />
+                      </div>
+                      
+                      <h3 className="text-xl font-semibold text-gray-900 mb-2">{election.title}</h3>
+                      <p className="text-gray-600 mb-4 line-clamp-2">{election.description}</p>
+                      
+                      <div className="space-y-2 mb-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Start:</span>
+                          <span className="text-gray-900">{formatDate(election.start_date)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">End:</span>
+                          <span className="text-gray-900">{formatDate(election.end_date)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Total Votes:</span>
+                          <span className="text-gray-900 font-medium">{totalVotes}</span>
+                        </div>
+                      </div>
+
+                      {/* Only show leading candidate if election has ended */}
+                      {electionResults.length > 0 && status === 'ended' && (
+                        <div className="mb-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Winner:</h4>
+                          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-3 rounded-md border border-yellow-200">
+                            <p className="font-medium text-yellow-900">{electionResults[0]?.candidate_name}</p>
+                            <p className="text-sm text-yellow-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Show current leader for active elections */}
+                      {electionResults.length > 0 && status === 'active' && (
+                        <div className="mb-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Currently Leading:</h4>
+                          <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded-md">
+                            <p className="font-medium text-blue-900">{electionResults[0]?.candidate_name}</p>
+                            <p className="text-sm text-blue-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex space-x-2">
+                        <Button asChild size="sm" className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                          <Link to={`/elections/${election.id}`}>
+                            {status === 'active' ? 'Vote Now' : 'View Details'}
+                          </Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to={`/results/${election.id}`}>
+                            Results
+                          </Link>
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <Card className="text-center py-12 backdrop-blur-sm bg-white/90 border-white/20">
+              <Vote className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-medium text-gray-900 mb-2">No Active Elections</h3>
+              <p className="text-gray-600">Check back soon for upcoming elections</p>
+            </Card>
           )}
 
-          {connectionStatus === 'connected' && (
-            <>
-              {loading ? (
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-4 text-gray-600">Loading elections...</p>
-                </div>
-              ) : error ? (
-                <Card className="text-center py-8 bg-red-50 border-red-200">
-                  <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Elections</h3>
-                  <p className="text-red-700 mb-4">{error}</p>
-                  <Button onClick={retryConnection} className="bg-red-600 hover:bg-red-700">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Try Again
-                  </Button>
-                </Card>
-              ) : elections.length > 0 ? (
-                <>
-                  {/* Loading indicator for results */}
-                  {loadingResults && (
-                    <div className="mb-6 flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
-                      <span className="text-gray-600 text-sm">Loading results...</span>
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {elections.map((election) => {
-                      const status = getElectionStatus(election.start_date, election.end_date);
-                      const StatusIcon = getStatusIcon(status);
-                      const electionResults = results[election.id] || [];
-                      const totalVotes = electionResults.reduce((sum, result) => sum + result.vote_count, 0);
-
-                      return (
-                        <Card key={election.id} className="hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm bg-white/90 border-white/20" hover>
-                          <div className="flex items-center justify-between mb-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
-                              <StatusIcon className="h-3 w-3 mr-1" />
-                              {status.charAt(0).toUpperCase() + status.slice(1)}
-                            </span>
-                            <Vote className="h-5 w-5 text-blue-600" />
-                          </div>
-                          
-                          <h3 className="text-xl font-semibold text-gray-900 mb-2">{election.title}</h3>
-                          <p className="text-gray-600 mb-4 line-clamp-2">{election.description}</p>
-                          
-                          <div className="space-y-2 mb-4">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Start:</span>
-                              <span className="text-gray-900">{formatDate(election.start_date)}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">End:</span>
-                              <span className="text-gray-900">{formatDate(election.end_date)}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-500">Total Votes:</span>
-                              <span className="text-gray-900 font-medium">{totalVotes}</span>
-                            </div>
-                          </div>
-
-                          {/* Only show leading candidate if election has ended */}
-                          {electionResults.length > 0 && status === 'ended' && (
-                            <div className="mb-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Winner:</h4>
-                              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-3 rounded-md border border-yellow-200">
-                                <p className="font-medium text-yellow-900">{electionResults[0]?.candidate_name}</p>
-                                <p className="text-sm text-yellow-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Show current leader for active elections */}
-                          {electionResults.length > 0 && status === 'active' && (
-                            <div className="mb-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-2">Currently Leading:</h4>
-                              <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded-md">
-                                <p className="font-medium text-blue-900">{electionResults[0]?.candidate_name}</p>
-                                <p className="text-sm text-blue-700">{electionResults[0]?.department} • {electionResults[0]?.vote_count} votes</p>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex space-x-2">
-                            <Button asChild size="sm" className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                              <Link to={`/elections/${election.id}`}>
-                                {status === 'active' ? 'Vote Now' : 'View Details'}
-                              </Link>
-                            </Button>
-                            <Button variant="outline" size="sm" asChild>
-                              <Link to={`/results/${election.id}`}>
-                                Results
-                              </Link>
-                            </Button>
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                <Card className="text-center py-12 backdrop-blur-sm bg-white/90 border-white/20">
-                  <Vote className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-xl font-medium text-gray-900 mb-2">No Active Elections</h3>
-                  <p className="text-gray-600">Check back soon for upcoming elections</p>
-                </Card>
-              )}
-
-              {elections.length > 0 && (
-                <div className="text-center mt-8">
-                  <Button asChild size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                    <Link to="/elections">
-                      View All Elections
-                      <ArrowRight className="ml-2 h-5 w-5" />
-                    </Link>
-                  </Button>
-                </div>
-              )}
-            </>
+          {elections.length > 0 && (
+            <div className="text-center mt-8">
+              <Button asChild size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                <Link to="/elections">
+                  View All Elections
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+            </div>
           )}
         </div>
       </section>

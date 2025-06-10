@@ -35,7 +35,7 @@ if (supabaseAnonKey.includes('your-anon-key') || supabaseAnonKey === 'your-anon-
   throw new Error('Please replace the placeholder Supabase anon key with your actual anon key from https://supabase.com/dashboard');
 }
 
-// Create Supabase client with optimized configuration for maximum performance
+// Create Supabase client with persistent connection configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -51,18 +51,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'x-client-info': 'univote-web'
-    },
-    fetch: (url, options = {}) => {
-      // Add timeout to all fetch requests - increased from 10 seconds to 20 seconds
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
-      
-      return fetch(url, {
-        ...options,
-        signal: controller.signal
-      }).finally(() => {
-        clearTimeout(timeoutId);
-      });
     }
   },
   db: {
@@ -70,33 +58,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Test connection function with improved error handling and timeout
+// Test connection function with persistent retry mechanism
 export const testSupabaseConnection = async (): Promise<boolean> => {
   try {
     if (import.meta.env.DEV) {
       console.log('Testing Supabase connection...');
     }
     
-    // Create a promise that will timeout after 16 seconds (increased from 8 seconds)
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout - unable to reach Supabase server')), 16000);
-    });
-    
-    // Simple health check - try to get a count from elections table with minimal data
-    const connectionPromise = supabase
+    // Simple health check - try to get a count from elections table
+    const { data, error } = await supabase
       .from('elections')
       .select('id', { count: 'exact', head: true })
-      .limit(1)
-      .single();
+      .limit(1);
     
-    try {
-      const result = await Promise.race([connectionPromise, timeoutPromise]);
-      
-      if (import.meta.env.DEV) {
-        console.log('Supabase connection test successful');
-      }
-      return true;
-    } catch (error: any) {
+    if (error) {
       // Handle the specific error from the query
       if (error?.code === 'PGRST116') {
         // This error means the query returned no results, but connection is working
@@ -122,25 +97,20 @@ export const testSupabaseConnection = async (): Promise<boolean> => {
         throw new Error('Invalid Supabase credentials. Please check your VITE_SUPABASE_ANON_KEY.');
       }
       
-      // Check if it's a timeout
-      if (error.message.includes('timeout') || error.name === 'AbortError') {
-        throw new Error('Connection timeout. Please check your internet connection and try again.');
-      }
-      
       throw new Error(`Database connection failed: ${error.message}`);
     }
     
+    if (import.meta.env.DEV) {
+      console.log('Supabase connection test successful');
+    }
+    return true;
+
   } catch (error) {
     console.error('Supabase connection test error:', error);
     
     // Handle network errors specifically
     if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
       throw new Error('Unable to reach Supabase server. Please check your VITE_SUPABASE_URL and internet connection.');
-    }
-    
-    // Handle timeout errors
-    if (error instanceof Error && (error.message.includes('timeout') || error.name === 'AbortError')) {
-      throw new Error('Connection timeout. Please check your internet connection and try again.');
     }
     
     // Re-throw custom errors
